@@ -1,0 +1,1436 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>difff《ﾃﾞｭﾌﾌ》- テキスト比較ツール</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+:root {
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface-raised: #f0f0f2;
+  --border: #d0d0d8;
+  --text: #1a1a2e;
+  --text-muted: #666680;
+  --accent: #0077cc;
+  --accent-glow: rgba(0, 119, 204, 0.1);
+  --delete: #d63031;
+  --delete-bg: rgba(214, 48, 49, 0.12);
+  --insert: #00a86b;
+  --insert-bg: rgba(0, 168, 107, 0.12);
+  --change: #e67e22;
+  --change-bg: rgba(230, 126, 34, 0.12);
+  --grid-color: rgba(0, 119, 204, 0.05);
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --surface-raised: #1a1a26;
+  --border: #2a2a3a;
+  --text: #e8e8f0;
+  --text-muted: #8888a0;
+  --accent: #00d4ff;
+  --accent-glow: rgba(0, 212, 255, 0.15);
+  --delete: #ff6b8a;
+  --delete-bg: rgba(255, 107, 138, 0.15);
+  --insert: #7dffb3;
+  --insert-bg: rgba(125, 255, 179, 0.15);
+  --change: #ffcc4d;
+  --change-bg: rgba(255, 204, 77, 0.15);
+  --grid-color: rgba(0, 212, 255, 0.03);
+}
+
+/* Sepia theme */
+[data-theme="sepia"] {
+  --bg: #f4ecd8;
+  --surface: #faf6eb;
+  --surface-raised: #efe9d9;
+  --border: #d4c9a8;
+  --text: #433422;
+  --text-muted: #7a6a50;
+  --accent: #8b4513;
+  --accent-glow: rgba(139, 69, 19, 0.1);
+  --delete: #a0522d;
+  --delete-bg: rgba(160, 82, 45, 0.15);
+  --insert: #228b22;
+  --insert-bg: rgba(34, 139, 34, 0.15);
+  --change: #b8860b;
+  --change-bg: rgba(184, 134, 11, 0.15);
+  --grid-color: rgba(139, 69, 19, 0.04);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Noto Sans JP', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+/* Subtle grid background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: 
+    linear-gradient(var(--grid-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+  background-size: 50px 50px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.container {
+  max-width: none;
+  margin: 0;
+  padding: 16px;
+}
+
+/* Header */
+header {
+  text-align: center;
+  margin-bottom: 16px;
+  animation: fadeInDown 0.6s ease-out;
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 0;
+}
+
+h1 span.tool-name {
+  background: linear-gradient(135deg, var(--accent), #00ffcc);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+h1 span.katakana {
+  font-size: 1rem;
+  color: var(--text-muted);
+  -webkit-text-fill-color: var(--text-muted);
+  margin-left: 8px;
+  font-weight: 400;
+}
+
+.tagline {
+  display: none;
+}
+
+/* Input Section */
+.input-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+  animation: fadeIn 0.6s ease-out 0.1s both;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.input-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.input-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.input-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-input {
+  cursor: pointer;
+}
+
+.file-input input {
+  display: none;
+}
+
+.file-input span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.file-input:hover span {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.input-panel.drag-over textarea {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.input-label::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.input-panel:last-child .input-label::before {
+  background: linear-gradient(135deg, #00ffcc, #00d4ff);
+}
+
+textarea {
+  min-height: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text);
+  resize: vertical;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  animation: fadeIn 0.6s ease-out 0.2s both;
+  flex-wrap: wrap;
+}
+
+button {
+  font-family: 'Noto Sans JP', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  box-shadow: 0 4px 20px var(--accent-glow);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+
+.btn-icon {
+  padding: 10px 14px;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-icon span {
+  font-size: 0.85rem;
+}
+
+/* Theme selector */
+.theme-selector {
+  display: flex;
+  gap: 8px;
+  margin-left: 16px;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+}
+
+.theme-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.theme-btn:hover {
+  transform: scale(1.1);
+}
+
+.theme-btn.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.theme-btn.dark {
+  background: #0a0a0f;
+}
+
+.theme-btn.light {
+  background: #f5f5f7;
+}
+
+.theme-btn.sepia {
+  background: #f4ecd8;
+}
+
+/* Results Section */
+.results-section {
+  display: none;
+  animation: slideUp 0.5s ease-out;
+}
+
+.results-section.visible {
+  display: block;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.results-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.btn-small {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+}
+
+.results-title {
+  font-size: 1rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.results-title::before {
+  content: '⟨⟩';
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--accent);
+}
+
+.legend {
+  display: flex;
+  gap: 16px;
+  font-size: 0.75rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-badge {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+}
+
+.legend-badge.delete {
+  background: var(--delete-bg);
+  color: var(--delete);
+  border: 1px solid var(--delete);
+}
+
+.legend-badge.insert {
+  background: var(--insert-bg);
+  color: var(--insert);
+  border: 1px solid var(--insert);
+}
+
+.legend-badge.change {
+  background: var(--change-bg);
+  color: var(--change);
+  border: 1px solid var(--change);
+}
+
+/* Diff Table */
+.diff-container {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.diff-table th {
+  background: var(--surface-raised);
+  padding: 6px 12px;
+  text-align: left;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.diff-table td {
+  padding: 4px 12px;
+  vertical-align: top;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  border-bottom: 1px solid var(--border);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diff-table tr:last-child td {
+  border-bottom: none;
+}
+
+.diff-table td:first-child {
+  border-right: 1px solid var(--border);
+  width: 50%;
+}
+
+/* Diff highlights */
+.diff-delete {
+  background: var(--delete-bg);
+  color: var(--delete);
+  border-radius: 3px;
+  padding: 1px 2px;
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 107, 138, 0.5);
+}
+
+.diff-insert {
+  background: var(--insert-bg);
+  color: var(--insert);
+  border-radius: 3px;
+  padding: 1px 2px;
+}
+
+/* Space characters - individual highlight */
+.space-char {
+  margin: 0 1px;
+  min-width: 0.5em;
+}
+
+.diff-change {
+  background: var(--change-bg);
+  color: var(--change);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+/* Newline markers */
+.newline-marker {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin: 0 2px;
+  background: var(--change-bg);
+  color: var(--change);
+  user-select: none;
+}
+
+/* Empty cell (placeholder for missing lines) */
+.empty-cell {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.empty-line {
+  display: block;
+  height: 1.2em;
+}
+
+/* Stats */
+.stats-row td {
+  background: var(--surface-raised);
+  padding: 8px 20px;
+  border-top: 1px solid var(--border);
+  white-space: normal;
+}
+
+.stats {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.75rem;
+}
+
+.stats-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stats dt {
+  color: var(--text-muted);
+}
+
+.stats dt::after {
+  content: ':';
+}
+
+.stats dd {
+  margin: 0 12px 0 0;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* No differences */
+.no-diff {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+}
+
+.no-diff-icon {
+  font-size: 2rem;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+/* Footer */
+footer {
+  margin-top: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+footer a:hover {
+  text-decoration: underline;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .input-section {
+    grid-template-columns: 1fr;
+  }
+  
+  .results-header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  
+  .legend {
+    flex-wrap: wrap;
+  }
+  
+  h1 {
+    font-size: 1.75rem;
+  }
+  
+  h1 span.katakana {
+    display: block;
+    margin-left: 0;
+    margin-top: 4px;
+  }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>
+      <span class="tool-name">difff</span>
+      <span class="katakana">《ﾃﾞｭﾌﾌ》</span>
+    </h1>
+    <p class="tagline">2つのテキストの差分をハイライト表示するツール</p>
+  </header>
+
+  <div class="input-section">
+    <div class="input-panel" id="panelA">
+      <div class="input-header">
+        <label class="input-label">テキスト A（元のテキスト）</label>
+        <label class="file-input">
+          <input type="file" accept=".txt,.md,.html,.htm,.xht,.xhtml,.css,.js,.json,.xml,.csv,.java,.properties,.gradle,.kt,.scala,.groovy,.yml,.yaml,.pom" onchange="loadFile(event, 'textA')">
+          <span>📁 ファイル</span>
+        </label>
+      </div>
+      <textarea id="textA" placeholder="テキストを入力、またはファイルをドロップ..."></textarea>
+    </div>
+    <div class="input-panel" id="panelB">
+      <div class="input-header">
+        <label class="input-label">テキスト B（変更後のテキスト）</label>
+        <label class="file-input">
+          <input type="file" accept=".txt,.md,.html,.htm,.xht,.xhtml,.css,.js,.json,.xml,.csv,.java,.properties,.gradle,.kt,.scala,.groovy,.yml,.yaml,.pom" onchange="loadFile(event, 'textB')">
+          <span>📁 ファイル</span>
+        </label>
+      </div>
+      <textarea id="textB" placeholder="テキストを入力、またはファイルをドロップ..."></textarea>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary" onclick="compare()">比較する</button>
+    <button class="btn-secondary btn-icon" onclick="swapTexts()" title="左右入れ替え">⇄<span>入替</span></button>
+    <button class="btn-secondary" onclick="clearAll()">クリア</button>
+    <button class="btn-secondary" onclick="loadSample()">サンプル</button>
+    <div class="theme-selector">
+      <button class="theme-btn dark" onclick="setTheme('dark')" title="ダーク"></button>
+      <button class="theme-btn light active" onclick="setTheme('light')" title="ライト"></button>
+      <button class="theme-btn sepia" onclick="setTheme('sepia')" title="セピア"></button>
+    </div>
+  </div>
+
+  <section class="results-section" id="results">
+    <div class="results-header">
+      <h2 class="results-title">比較結果</h2>
+      <div class="results-actions">
+        <button class="btn-secondary btn-small" onclick="downloadExcel()">📥 Excelダウンロード</button>
+        <div class="legend">
+          <div class="legend-item">
+            <span class="legend-badge delete">削除</span>
+            <span>Aのみに存在</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-badge insert">挿入</span>
+            <span>Bのみに存在</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-badge change">↵</span>
+            <span>改行の差分</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="diff-container">
+      <table class="diff-table" id="diffTable">
+        <thead>
+          <tr>
+            <th>テキスト A</th>
+            <th>テキスト B</th>
+          </tr>
+        </thead>
+        <tbody id="diffBody">
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Original: <a href="https://difff.jp/" target="_blank">difff.jp</a> by @meso_cacase |
+      This HTML version runs entirely in your browser
+    </p>
+  </footer>
+</div>
+
+<script>
+// テキストを比較単位に分割（単語または文字単位）
+function tokenize(text) {
+  const tokens = [];
+  let i = 0;
+  while (i < text.length) {
+    // 英単語
+    if (/[a-zA-Z]/.test(text[i])) {
+      let word = '';
+      while (i < text.length && /[a-zA-Z]/.test(text[i])) {
+        word += text[i];
+        i++;
+      }
+      tokens.push(word);
+    }
+    // 改行
+    else if (text[i] === '\n') {
+      tokens.push('\n');
+      i++;
+    }
+    // その他の文字（日本語含む）
+    else {
+      tokens.push(text[i]);
+      i++;
+    }
+  }
+  return tokens;
+}
+
+// 最長共通部分列（LCS）を用いた差分検出
+function computeLCS(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+  
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+  return dp;
+}
+
+// 差分を生成
+function generateDiff(a, b) {
+  const dp = computeLCS(a, b);
+  const diff = [];
+  let i = a.length;
+  let j = b.length;
+  
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+      diff.unshift({ type: 'equal', value: a[i - 1] });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      diff.unshift({ type: 'insert', value: b[j - 1] });
+      j--;
+    } else {
+      diff.unshift({ type: 'delete', value: a[i - 1] });
+      i--;
+    }
+  }
+  
+  // changeへのマージはしない - delete/insertのまま返す
+  return diff;
+}
+
+// HTMLエスケープ
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// 差分を行ごとにレンダリング
+function renderDiff(diff) {
+  const rows = [];
+  let currentA = [];
+  let currentB = [];
+  
+  // 両方に改行が来たときだけflush
+  function flush() {
+    if (currentA.length > 0 || currentB.length > 0) {
+      rows.push({
+        a: { tokens: currentA, isEmpty: currentA.length === 0 },
+        b: { tokens: currentB, isEmpty: currentB.length === 0 }
+      });
+    }
+    currentA = [];
+    currentB = [];
+  }
+  
+  let pendingNewlineA = false;
+  let pendingNewlineB = false;
+  
+  for (const item of diff) {
+    if (item.type === 'equal') {
+      if (item.value === '\n') {
+        // 両方に改行 → 行を確定
+        flush();
+      } else {
+        currentA.push({ type: 'equal', value: item.value });
+        currentB.push({ type: 'equal', value: item.value });
+      }
+    } else if (item.type === 'delete') {
+      if (item.value === '\n') {
+        // Aだけ改行 → 改行マーカーを追加してそのまま続ける
+        currentA.push({ type: 'newline-delete', value: '↵' });
+      } else {
+        currentA.push({ type: 'delete', value: item.value });
+      }
+    } else if (item.type === 'insert') {
+      if (item.value === '\n') {
+        // Bだけ改行 → 改行マーカーを追加してそのまま続ける
+        currentB.push({ type: 'newline-insert', value: '↵' });
+      } else {
+        currentB.push({ type: 'insert', value: item.value });
+      }
+    }
+  }
+  
+  // 最後の行
+  flush();
+  
+  return rows;
+}
+
+// 行の内容をHTMLに変換
+function rowToHtml(row) {
+  // 空行プレースホルダー
+  if (row.isEmpty) {
+    return '<span class="empty-line"></span>';
+  }
+  
+  let html = '';
+  let currentType = null;
+  let buffer = '';
+  
+  for (const item of row.tokens) {
+    // 改行マーカーは別扱い
+    if (item.type === 'newline-delete' || item.type === 'newline-insert') {
+      if (buffer) {
+        html += wrapWithClass(buffer, currentType);
+        buffer = '';
+        currentType = null;
+      }
+      // 改行マーカーの後に実際の改行を入れる
+      html += '<span class="newline-marker">' + item.value + '</span>\n';
+      continue;
+    }
+    
+    if (item.type !== currentType) {
+      if (buffer) {
+        html += wrapWithClass(buffer, currentType);
+      }
+      currentType = item.type;
+      buffer = escapeHtml(item.value);
+    } else {
+      buffer += escapeHtml(item.value);
+    }
+  }
+  if (buffer) {
+    html += wrapWithClass(buffer, currentType);
+  }
+  
+  return html || '&nbsp;';
+}
+
+function wrapWithClass(text, type) {
+  if (type === 'delete' || type === 'insert') {
+    const className = type === 'delete' ? 'diff-delete' : 'diff-insert';
+    // スペースとそれ以外を分離して処理
+    let result = '';
+    let buffer = '';
+    
+    for (const char of text) {
+      if (char === ' ') {
+        // バッファにたまった非スペース文字を出力
+        if (buffer) {
+          result += `<span class="${className}">${buffer}</span>`;
+          buffer = '';
+        }
+        // スペースは個別にハイライト
+        result += `<span class="${className} space-char"> </span>`;
+      } else {
+        buffer += char;
+      }
+    }
+    // 残りのバッファを出力
+    if (buffer) {
+      result += `<span class="${className}">${buffer}</span>`;
+    }
+    return result;
+  }
+  return text;
+}
+
+// 統計情報を計算
+function countStats(text) {
+  // CRを除去
+  text = text.replace(/\r/g, '');
+  
+  const total = text.length;
+  const newlines = (text.match(/\n/g) || []).length;
+  const withoutNewlines = text.replace(/\n/g, '').length;
+  const spaces = (text.replace(/\n/g, '').match(/\s/g) || []).length;
+  const chars = text.replace(/\s/g, '').length;
+  const words = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+  
+  return {
+    chars,           // 文字数（空白・改行なし）
+    spaces,          // 空白数
+    charsWithSpaces: withoutNewlines, // 空白込み文字数
+    newlines,        // 改行数
+    charsTotal: total, // 改行込み文字数
+    words            // 単語数
+  };
+}
+
+// メイン比較関数
+function compare() {
+  const textA = document.getElementById('textA').value;
+  const textB = document.getElementById('textB').value;
+  
+  const tokensA = tokenize(textA);
+  const tokensB = tokenize(textB);
+  
+  const diff = generateDiff(tokensA, tokensB);
+  const rows = renderDiff(diff);
+  
+  // Excelダウンロード用に保存
+  lastDiffRows = rows;
+  
+  const tbody = document.getElementById('diffBody');
+  tbody.innerHTML = '';
+  
+  // 差分があるかチェック
+  const hasDiff = diff.some(d => d.type !== 'equal');
+  
+  if (!hasDiff && textA === textB) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="2">
+          <div class="no-diff">
+            <div class="no-diff-icon">✓</div>
+            <p>差分はありません。両方のテキストは同一です。</p>
+          </div>
+        </td>
+      </tr>
+    `;
+  } else {
+    // 差分行を表示
+    for (const row of rows) {
+      const tr = document.createElement('tr');
+      const tdA = document.createElement('td');
+      const tdB = document.createElement('td');
+      
+      // 空行プレースホルダーの場合は背景色を変える
+      if (row.a.isEmpty) {
+        tdA.className = 'empty-cell';
+      }
+      if (row.b.isEmpty) {
+        tdB.className = 'empty-cell';
+      }
+      
+      tdA.innerHTML = rowToHtml(row.a);
+      tdB.innerHTML = rowToHtml(row.b);
+      
+      tr.appendChild(tdA);
+      tr.appendChild(tdB);
+      tbody.appendChild(tr);
+    }
+  }
+  
+  // 統計情報を追加
+  const statsA = countStats(textA);
+  const statsB = countStats(textB);
+  
+  const statsTr = document.createElement('tr');
+  statsTr.className = 'stats-row';
+  statsTr.innerHTML = `
+    <td>
+      <dl class="stats">
+        <div class="stats-line"><dt>文字数</dt><dd>${statsA.chars}</dd></div>
+        <div class="stats-line"><dt>空白数</dt><dd>${statsA.spaces}</dd><dt>空白込み文字数</dt><dd>${statsA.charsWithSpaces}</dd></div>
+        <div class="stats-line"><dt>改行数</dt><dd>${statsA.newlines}</dd><dt>改行込み文字数</dt><dd>${statsA.charsTotal}</dd></div>
+        <div class="stats-line"><dt>単語数</dt><dd>${statsA.words}</dd></div>
+      </dl>
+    </td>
+    <td>
+      <dl class="stats">
+        <div class="stats-line"><dt>文字数</dt><dd>${statsB.chars}</dd></div>
+        <div class="stats-line"><dt>空白数</dt><dd>${statsB.spaces}</dd><dt>空白込み文字数</dt><dd>${statsB.charsWithSpaces}</dd></div>
+        <div class="stats-line"><dt>改行数</dt><dd>${statsB.newlines}</dd><dt>改行込み文字数</dt><dd>${statsB.charsTotal}</dd></div>
+        <div class="stats-line"><dt>単語数</dt><dd>${statsB.words}</dd></div>
+      </dl>
+    </td>
+  `;
+  tbody.appendChild(statsTr);
+  
+  // 結果セクションを表示
+  document.getElementById('results').classList.add('visible');
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// クリア
+function clearAll() {
+  document.getElementById('textA').value = '';
+  document.getElementById('textB').value = '';
+  document.getElementById('results').classList.remove('visible');
+}
+
+// サンプルテキストを読み込み
+function loadSample() {
+  document.getElementById('textA').value = `下記の文章を比較してください。
+   Betty Botter bought some butter, 
+But, she said, this butter's bitter;
+If I put it in my batter,
+It will make my batter bitter,
+But a bit of better butter
+Will make my batter better.
+So she bought a bit of butter
+Better than her bitter butter,
+And she put it in her batter,
+And it made her batter better,
+So 'twas better Betty Botter
+Bought a bit of better butter.`;
+
+  document.getElementById('textB').value = `下記の文章を，ﾋﾋ較してくだちい．
+Betty Botter bought some butter,
+But, she said, the butter's bitter;
+If I put it in my batter,
+That will make my batter bitter.
+But a bit of better butter, 
+That will make my batter better.
+So she bought a bit of butter
+Better than her bitter butter.
+And she put it in her batter,
+And it made her batter better.
+So it was better Betty Botter
+Bought a bit of better butter.`;
+
+  compare();
+}
+
+// 左右入れ替え
+function swapTexts() {
+  const textA = document.getElementById('textA');
+  const textB = document.getElementById('textB');
+  const temp = textA.value;
+  textA.value = textB.value;
+  textB.value = temp;
+  
+  // 結果が表示されていたら再比較
+  if (document.getElementById('results').classList.contains('visible')) {
+    compare();
+  }
+}
+
+// テーマ切り替え
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme === 'light' ? '' : theme);
+  
+  // ボタンのactive状態を更新
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  document.querySelector(`.theme-btn.${theme}`).classList.add('active');
+  
+  // URLパラメータを更新
+  const url = new URL(window.location);
+  if (theme === 'light') {
+    url.searchParams.delete('theme');
+  } else {
+    url.searchParams.set('theme', theme);
+  }
+  window.history.replaceState({}, '', url);
+}
+
+// ページ読み込み時にURLパラメータからテーマを復元
+(function() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const theme = urlParams.get('theme') || 'light';
+  setTheme(theme);
+  
+  // ドラッグ&ドロップのセットアップ
+  setupDragDrop('panelA', 'textA');
+  setupDragDrop('panelB', 'textB');
+})();
+
+// ファイル読み込み
+function loadFile(event, textareaId) {
+  const file = event.target.files[0];
+  if (file) {
+    if (!checkFileSize(file)) {
+      event.target.value = '';
+      return;
+    }
+    if (!checkFileType(file)) {
+      event.target.value = '';
+      return;
+    }
+    readFile(file, textareaId);
+  }
+}
+
+// ファイルサイズチェック（1MB以上で警告）
+const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB
+const WARN_FILE_SIZE = 500 * 1024; // 500KB
+
+// デフォルトの対応形式
+const DEFAULT_EXTENSIONS = [
+  '.txt', '.md', '.html', '.htm', '.xht', '.xhtml', 
+  '.css', '.js', '.json', '.xml', '.csv',
+  '.java', '.properties', '.gradle', '.kt', '.scala', '.groovy', 
+  '.yml', '.yaml', '.pom'
+];
+
+function getAllowedExtensions() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const extraExts = urlParams.get('ext');
+  const allowed = [...DEFAULT_EXTENSIONS];
+  if (extraExts) {
+    extraExts.split(',').forEach(ext => {
+      const e = ext.startsWith('.') ? ext : '.' + ext;
+      if (!allowed.includes(e.toLowerCase())) {
+        allowed.push(e.toLowerCase());
+      }
+    });
+  }
+  return allowed;
+}
+
+function getFileExtension(filename) {
+  const lastDot = filename.lastIndexOf('.');
+  return lastDot >= 0 ? filename.slice(lastDot).toLowerCase() : '';
+}
+
+function checkFileType(file) {
+  const ext = getFileExtension(file.name);
+  const allowed = getAllowedExtensions();
+  
+  if (!ext) {
+    return confirm('拡張子のないファイルです。テキストファイルとして読み込みますか？');
+  }
+  
+  if (!allowed.includes(ext)) {
+    const proceed = confirm(
+      `未対応の形式です（${ext}）。\n\nテキストファイルとして読み込みますか？\n\n` +
+      `OKを押すと、このURLでは次回から確認なしで読み込めます。\n` +
+      `（ブックマークしておくと便利です）`
+    );
+    if (proceed) {
+      addExtensionToUrl(ext);
+    }
+    return proceed;
+  }
+  return true;
+}
+
+function addExtensionToUrl(ext) {
+  const url = new URL(window.location);
+  const currentExts = url.searchParams.get('ext');
+  const extWithoutDot = ext.startsWith('.') ? ext.slice(1) : ext;
+  
+  if (currentExts) {
+    const extList = currentExts.split(',');
+    if (!extList.includes(extWithoutDot)) {
+      extList.push(extWithoutDot);
+      url.searchParams.set('ext', extList.join(','));
+    }
+  } else {
+    url.searchParams.set('ext', extWithoutDot);
+  }
+  window.history.replaceState({}, '', url);
+}
+
+function checkFileSize(file) {
+  if (file.size > MAX_FILE_SIZE) {
+    alert(`ファイルが大きすぎます（${formatFileSize(file.size)}）。\n1MB以下のファイルを選択してください。`);
+    return false;
+  }
+  if (file.size > WARN_FILE_SIZE) {
+    return confirm(`ファイルサイズが大きいです（${formatFileSize(file.size)}）。\n処理に時間がかかる場合があります。続行しますか？`);
+  }
+  return true;
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// ファイルを読み込んでテキストエリアにセット
+function readFile(file, textareaId) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    document.getElementById(textareaId).value = e.target.result;
+  };
+  reader.readAsText(file);
+}
+
+// ドラッグ&ドロップのセットアップ
+function setupDragDrop(panelId, textareaId) {
+  const panel = document.getElementById(panelId);
+  const textarea = document.getElementById(textareaId);
+  
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    panel.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  });
+  
+  ['dragenter', 'dragover'].forEach(eventName => {
+    panel.addEventListener(eventName, () => {
+      panel.classList.add('drag-over');
+    });
+  });
+  
+  ['dragleave', 'drop'].forEach(eventName => {
+    panel.addEventListener(eventName, () => {
+      panel.classList.remove('drag-over');
+    });
+  });
+  
+  panel.addEventListener('drop', (e) => {
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      const file = files[0];
+      if (checkFileSize(file) && checkFileType(file)) {
+        readFile(file, textareaId);
+      }
+    }
+  });
+}
+
+// Excelダウンロード
+let lastDiffRows = null; // 比較結果を保存
+
+async function downloadExcel() {
+  if (!lastDiffRows) {
+    alert('先に比較を実行してください');
+    return;
+  }
+  
+  const textA = document.getElementById('textA').value;
+  const textB = document.getElementById('textB').value;
+  const statsA = countStats(textA);
+  const statsB = countStats(textB);
+  
+  // ワークブック作成
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('比較結果');
+  
+  // 列幅設定
+  ws.columns = [
+    { width: 6 },   // No
+    { width: 60 },  // テキストA
+    { width: 60 },  // テキストB
+    { width: 10 }   // 一致判定
+  ];
+  
+  // ヘッダー行
+  const headerRow = ws.addRow(['No', 'テキスト A', 'テキスト B', '一致']);
+  headerRow.eachCell(cell => {
+    cell.font = { bold: true };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+  });
+  
+  // オートフィルター設定
+  ws.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: 4 }
+  };
+  
+  // 色定義
+  const colors = {
+    delete: { font: 'FFCC0000', bg: 'FFFFD9D9' },
+    insert: { font: 'FF006600', bg: 'FFD9FFD9' },
+    newline: { font: 'FF996600', bg: 'FFFFF0D9' }
+  };
+  
+  // 比較結果を追加
+  lastDiffRows.forEach((row, index) => {
+    // 差分があるかチェック
+    const hasDiff = row.a.tokens.some(t => t.type === 'delete' || t.type.startsWith('newline')) ||
+                    row.b.tokens.some(t => t.type === 'insert' || t.type.startsWith('newline'));
+    
+    const excelRow = ws.addRow([index + 1, '', '', !hasDiff]);
+    
+    // No列の書式
+    const noCell = excelRow.getCell(1);
+    noCell.alignment = { horizontal: 'center' };
+    
+    // A列
+    const cellA = excelRow.getCell(2);
+    applyRichText(cellA, row.a.tokens, colors);
+    
+    // B列
+    const cellB = excelRow.getCell(3);
+    applyRichText(cellB, row.b.tokens, colors);
+    
+    // 一致判定列の書式
+    const matchCell = excelRow.getCell(4);
+    matchCell.alignment = { horizontal: 'center' };
+    
+    excelRow.alignment = { wrapText: true, vertical: 'top' };
+  });
+  
+  // 統計情報（右側に配置）
+  const statsStartCol = 6;
+  
+  // 統計ヘッダー
+  ws.getCell(1, statsStartCol).value = '統計情報';
+  ws.getCell(1, statsStartCol).font = { bold: true };
+  ws.getCell(1, statsStartCol + 1).value = 'テキスト A';
+  ws.getCell(1, statsStartCol + 1).font = { bold: true };
+  ws.getCell(1, statsStartCol + 2).value = 'テキスト B';
+  ws.getCell(1, statsStartCol + 2).font = { bold: true };
+  
+  const statsData = [
+    ['文字数', statsA.chars, statsB.chars],
+    ['空白数', statsA.spaces, statsB.spaces],
+    ['空白込み文字数', statsA.charsWithSpaces, statsB.charsWithSpaces],
+    ['改行数', statsA.newlines, statsB.newlines],
+    ['改行込み文字数', statsA.charsTotal, statsB.charsTotal],
+    ['単語数', statsA.words, statsB.words]
+  ];
+  
+  statsData.forEach((stat, i) => {
+    ws.getCell(i + 2, statsStartCol).value = stat[0];
+    ws.getCell(i + 2, statsStartCol + 1).value = stat[1];
+    ws.getCell(i + 2, statsStartCol + 2).value = stat[2];
+  });
+  
+  // 統計列の幅
+  ws.getColumn(statsStartCol).width = 18;
+  ws.getColumn(statsStartCol + 1).width = 12;
+  ws.getColumn(statsStartCol + 2).width = 12;
+  
+  // 行の高さを内容に合わせて自動調整
+  ws.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) {
+      row.height = 20; // ヘッダー行
+      return;
+    }
+    // テキスト内の改行数を数えて高さを計算
+    let maxLines = 1;
+    row.eachCell((cell) => {
+      if (cell.value && cell.value.richText) {
+        const text = cell.value.richText.map(r => r.text).join('');
+        const lines = (text.match(/\n/g) || []).length + 1;
+        maxLines = Math.max(maxLines, lines);
+      } else if (typeof cell.value === 'string') {
+        const lines = (cell.value.match(/\n/g) || []).length + 1;
+        maxLines = Math.max(maxLines, lines);
+      }
+    });
+    row.height = Math.max(15, maxLines * 15);
+  });
+  
+  // ダウンロード
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const now = new Date();
+  const timestamp = now.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '_');
+  a.href = url;
+  a.download = `difff_${timestamp}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// リッチテキストを適用
+function applyRichText(cell, tokens, colors) {
+  if (!tokens || tokens.length === 0) {
+    cell.value = '';
+    return;
+  }
+  
+  const richText = [];
+  
+  for (const token of tokens) {
+    if (token.type === 'newline-delete' || token.type === 'newline-insert') {
+      richText.push({
+        text: '↵\n',
+        font: { color: { argb: colors.newline.font }, bold: true }
+      });
+    } else if (token.type === 'delete') {
+      richText.push({
+        text: token.value,
+        font: { color: { argb: colors.delete.font }, strike: true }
+      });
+    } else if (token.type === 'insert') {
+      richText.push({
+        text: token.value,
+        font: { color: { argb: colors.insert.font }, bold: true }
+      });
+    } else {
+      richText.push({ text: token.value });
+    }
+  }
+  
+  cell.value = { richText };
+}
+</script>
+</body>
+</html>
