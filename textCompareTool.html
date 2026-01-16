@@ -1314,6 +1314,25 @@ function setupDragDrop(panelId, textareaId) {
 // Excelダウンロード
 let lastDiffRows = null; // 比較結果を保存
 
+// トークン列から改行トークンを除いたプレーン文字列を生成
+function tokensToPlain(tokens) {
+  if (!tokens || tokens.length === 0) return '';
+  let s = '';
+  for (const t of tokens) {
+    if (!t) continue;
+    if (t.type && String(t.type).startsWith('newline')) continue;
+    if (typeof t.value === 'string') s += t.value;
+  }
+  return s;
+}
+
+// Excelで空白や行末空白を確実に可視化する（半角スペース→␣、行末に↵を付与）
+function toVisibleWhitespaceLine(text) {
+  const s = (text ?? '').replace(/ /g, '␣');
+  return s + '↵';
+}
+
+
 async function downloadExcel() {
   if (!lastDiffRows) {
     alert('先に比較を実行してください');
@@ -1332,13 +1351,15 @@ async function downloadExcel() {
   // 列幅設定
   ws.columns = [
     { width: 6 },   // No
-    { width: 60 },  // テキストA
-    { width: 60 },  // テキストB
-    { width: 10 }   // 一致判定
+    { width: 70 },  // テキストA（差分␣/↵表示）
+    { width: 70 },  // テキストB（差分␣/↵表示）
+    { width: 10 },  // 一致判定
+    { width: 60 },  // テキストA（原文）
+    { width: 60 }   // テキストB（原文）
   ];
   
   // ヘッダー行
-  const headerRow = ws.addRow(['No', 'テキスト A', 'テキスト B', '一致']);
+  const headerRow = ws.addRow(['No', 'テキスト A（差分␣/↵表示）', 'テキスト B（差分␣/↵表示）', '一致', 'テキスト A（原文）', 'テキスト B（原文）']);
   headerRow.eachCell(cell => {
     cell.font = { bold: true };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
@@ -1347,7 +1368,7 @@ async function downloadExcel() {
   // オートフィルター設定
   ws.autoFilter = {
     from: { row: 1, column: 1 },
-    to: { row: 1, column: 4 }
+    to: { row: 1, column: 6 }
   };
   
   // 色定義
@@ -1363,7 +1384,7 @@ async function downloadExcel() {
     const hasDiff = row.a.tokens.some(t => t.type === 'delete' || t.type.startsWith('newline')) ||
                     row.b.tokens.some(t => t.type === 'insert' || t.type.startsWith('newline'));
     
-    const excelRow = ws.addRow([index + 1, '', '', !hasDiff]);
+    const excelRow = ws.addRow([index + 1, '', '', !hasDiff, '', '']);
     
     // No列の書式
     const noCell = excelRow.getCell(1);
@@ -1376,6 +1397,20 @@ async function downloadExcel() {
     // B列
     const cellB = excelRow.getCell(3);
     applyRichText(cellB, row.b.tokens, colors);
+
+    // 原文列（差分装飾なし）
+    const rawA = tokensToPlain(row.a.tokens);
+    const rawB = tokensToPlain(row.b.tokens);
+
+    const cellRawA = excelRow.getCell(5);
+    const cellRawB = excelRow.getCell(6);
+    cellRawA.value = rawA;
+    cellRawB.value = rawB;
+
+    // 見やすさのため等幅フォント
+    const monoFont = { name: 'Consolas' };
+    cellRawA.font = monoFont;
+    cellRawB.font = monoFont;
     
     // 一致判定列の書式
     const matchCell = excelRow.getCell(4);
@@ -1385,7 +1420,7 @@ async function downloadExcel() {
   });
   
   // 統計情報（右側に配置）
-  const statsStartCol = 6;
+  const statsStartCol = 10;
   
   // 統計ヘッダー
   ws.getCell(1, statsStartCol).value = '統計情報';
@@ -1449,44 +1484,64 @@ async function downloadExcel() {
   URL.revokeObjectURL(url);
 }
 
-// リッチテキストを適用
+// リッチテキストを適用（Excel出力用：␣/↵ は差分（insert/delete/newline）部分だけに表示し、ハイライトは維持）
 function applyRichText(cell, tokens, colors) {
+  const monoName = 'Consolas';
+
+  // 空の場合は空文字（差分表示記号は付けない）
   if (!tokens || tokens.length === 0) {
     cell.value = '';
+    cell.font = { name: monoName };
     return;
   }
-  
+
   const richText = [];
-  
+
   for (const token of tokens) {
+    if (!token) continue;
+
+    // 改行トークン（行の追加/削除などの表現）
     if (token.type === 'newline-delete' || token.type === 'newline-insert') {
       richText.push({
         text: '↵\n',
-        font: { color: { argb: colors.newline.font }, bold: true }
+        font: { name: monoName, color: { argb: colors.newline.font }, bold: true }
       });
-    } else if (token.type === 'delete') {
+      continue;
+    }
+
+    const raw = (typeof token.value === 'string') ? token.value : '';
+
+    // ␣ の可視化は差分（insert/delete）のみ
+    const txt = (token.type === 'insert' || token.type === 'delete')
+      ? raw.replace(/ /g, '␣')
+      : raw;
+
+    if (!txt) continue;
+
+    if (token.type === 'delete') {
       richText.push({
-        text: token.value,
-        font: { color: { argb: colors.delete.font }, strike: true }
+        text: txt,
+        font: { name: monoName, color: { argb: colors.delete.font }, strike: true }
       });
     } else if (token.type === 'insert') {
-      // 空白（スペース）は文字色だけだと見えにくいので、二重下線を付けて可視化する
-      if (token.value === ' ') {
-        richText.push({
-          text: token.value,
-          font: { color: { argb: colors.insert.font }, underline: 'double', bold: true }
-        });
-      } else {
-        richText.push({
-          text: token.value,
-          font: { color: { argb: colors.insert.font }, bold: true }
-        });
-      }
+      richText.push({
+        text: txt,
+        font: { name: monoName, color: { argb: colors.insert.font }, bold: true }
+      });
     } else {
-      richText.push({ text: token.value });
+      richText.push({
+        text: txt,
+        font: { name: monoName }
+      });
     }
   }
-  
+
+  if (richText.length === 0) {
+    cell.value = '';
+    cell.font = { name: monoName };
+    return;
+  }
+
   cell.value = { richText };
 }
 </script>
