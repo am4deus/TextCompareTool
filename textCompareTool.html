@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root {
   --bg: #f5f5f7;
@@ -303,6 +305,113 @@ button {
   display: none;
 }
 
+/* Result-only mode: hide everything except results */
+body.result-only-mode header,
+body.result-only-mode .input-section,
+body.result-only-mode .actions,
+body.result-only-mode footer,
+body.result-only-mode .results-title {
+  display: none !important;
+}
+
+body.result-only-mode .results-header {
+  border-bottom: none;
+  margin-bottom: 8px;
+  padding-bottom: 0;
+}
+
+body.result-only-mode .container {
+  padding: 8px;
+}
+
+body.result-only-mode .results-section {
+  animation: none;
+}
+
+/* 印刷時の設定 */
+@media print {
+  /* 印刷時はライトモードの色を強制 */
+  :root, [data-theme="dark"], [data-theme="sepia"] {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-raised: #f0f0f2;
+    --border: #d0d0d8;
+    --text: #1a1a2e;
+    --text-muted: #666680;
+    --delete: #d63031;
+    --delete-bg: rgba(214, 48, 49, 0.15);
+    --insert: #00a86b;
+    --insert-bg: rgba(0, 168, 107, 0.15);
+    --change: #e67e22;
+    --change-bg: rgba(230, 126, 34, 0.15);
+  }
+  
+  header,
+  .input-section,
+  .actions,
+  footer,
+  .results-title,
+  .results-actions {
+    display: none !important;
+  }
+  
+  .results-header {
+    border-bottom: none;
+    margin-bottom: 8px;
+    padding-bottom: 0;
+  }
+  
+  .results-info {
+    display: flex !important;
+    gap: 24px;
+  }
+  
+  body::before {
+    display: none;
+  }
+  
+  .container {
+    padding: 0;
+  }
+  
+  .results-section {
+    display: block !important;
+  }
+  
+  .diff-container {
+    border: 1px solid #ccc;
+  }
+  
+  /* 印刷時もハイライト表示を維持 */
+  .diff-delete,
+  .diff-delete.space-char {
+    background: var(--delete-bg) !important;
+    color: var(--delete) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .diff-insert,
+  .diff-insert.space-char {
+    background: var(--insert-bg) !important;
+    color: var(--insert) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .newline-marker {
+    background: var(--change-bg) !important;
+    color: var(--change) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  /* 差分カウントは印刷時も表示 */
+  .diff-stats {
+    display: flex !important;
+  }
+}
+
 .btn-icon {
   padding: 10px 14px;
   font-size: 1.1rem;
@@ -383,6 +492,8 @@ button {
   margin-bottom: 12px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .results-actions {
@@ -458,6 +569,7 @@ button {
 .diff-table {
   width: 100%;
   border-collapse: collapse;
+  font-size: var(--diff-font-size, 13px);
 }
 
 .diff-table th {
@@ -476,8 +588,8 @@ button {
   padding: 4px 12px;
   vertical-align: top;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.8rem;
-  line-height: 1.5;
+  font-size: inherit;
+  line-height: var(--diff-line-height, 1.5);
   border-bottom: 1px solid var(--border);
   white-space: pre-wrap;
   word-break: break-all;
@@ -487,9 +599,13 @@ button {
   border-bottom: none;
 }
 
-.diff-table td:first-child {
-  border-right: 1px solid var(--border);
+.diff-table td:nth-child(2),
+.diff-table td:nth-child(3) {
   width: 50%;
+}
+
+.diff-table td:nth-child(2) {
+  border-right: 1px solid var(--border);
 }
 
 /* Diff highlights */
@@ -594,6 +710,148 @@ button {
   opacity: 0.5;
 }
 
+/* Line number column */
+.line-num-col {
+  width: 50px;
+  min-width: 50px;
+  text-align: center;
+}
+
+.line-num {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-align: center;
+  padding: 4px 8px !important;
+  border-right: 1px solid var(--border);
+  user-select: none;
+  width: 50px;
+  min-width: 50px;
+  white-space: nowrap;
+}
+
+/* Results info (diff-stats + legend) */
+.results-info {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+/* Diff stats */
+.diff-stats {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: 12px;
+}
+
+.diff-stats .stat-delete {
+  color: var(--delete);
+  font-weight: 600;
+}
+
+.diff-stats .stat-insert {
+  color: var(--insert);
+  font-weight: 600;
+}
+
+/* Font size control */
+.text-settings {
+  position: relative;
+}
+
+.text-popup {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  z-index: 100;
+  min-width: 200px;
+}
+
+.text-popup.visible {
+  display: block;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.setting-row label {
+  font-size: 0.8rem;
+  color: var(--text);
+  min-width: 70px;
+}
+
+.setting-row input[type="range"] {
+  flex: 1;
+  cursor: pointer;
+}
+
+.setting-row span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-width: 36px;
+  text-align: right;
+}
+
+.setting-row input[type="color"] {
+  width: 32px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.setting-section {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.setting-section:last-of-type {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.setting-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.setting-section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.btn-reset {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-reset:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 /* Footer */
 footer {
   margin-top: 24px;
@@ -675,7 +933,7 @@ footer a:hover {
   </div>
 
   <div class="actions">
-    <button class="btn-primary" onclick="compare()">比較する</button>
+    <button class="btn-primary" onclick="compare()">比較する (Ctrl+Enter)</button>
     <button class="btn-secondary btn-icon" onclick="swapTexts()" title="左右入れ替え">⇄<span>入替</span></button>
     <button class="btn-secondary" onclick="clearAll()">クリア</button>
     <button class="btn-secondary" onclick="loadSample()">サンプル</button>
@@ -688,10 +946,9 @@ footer a:hover {
 
   <section class="results-section" id="results">
     <div class="results-header">
-      <h2 class="results-title">比較結果</h2>
-      <div class="results-actions">
-        <button class="btn-secondary btn-small" onclick="downloadExcel()">📥 Excelダウンロード</button>
-        <button class="btn-secondary btn-small" id="toggleDiffOnlyBtn" onclick="toggleDiffOnly()">差分のみ表示</button>
+      <div class="results-info">
+        <h2 class="results-title">比較結果</h2>
+        <div class="diff-stats" id="diffStats"></div>
         <div class="legend">
           <div class="legend-item">
             <span class="legend-badge delete">削除</span>
@@ -707,11 +964,58 @@ footer a:hover {
           </div>
         </div>
       </div>
+      <div class="results-actions">
+        <button class="btn-secondary btn-small" id="toggleDiffOnlyBtn" onclick="toggleDiffOnly()">差分のみ表示</button>
+        <button class="btn-secondary btn-small" id="toggleResultOnlyBtn" onclick="toggleResultOnly()">結果のみ表示</button>
+        <button class="btn-secondary btn-small" onclick="downloadExcel()">📥 Excel</button>
+        <button class="btn-secondary btn-small" onclick="downloadPDF()">📄 PDF</button>
+        <button class="btn-secondary btn-small" onclick="window.print()">🖨 印刷</button>
+        <div class="text-settings">
+          <button class="btn-secondary btn-small" onclick="toggleTextSettings()">⚙ 表示設定</button>
+          <div class="text-popup" id="textPopup">
+            <div class="setting-section">
+              <div class="setting-section-header">
+                <span class="setting-section-title">📏 サイズ</span>
+                <button class="btn-reset" onclick="resetTextSettings()">リセット</button>
+              </div>
+              <div class="setting-row">
+                <label>文字サイズ:</label>
+                <input type="range" id="fontSizeSlider" min="10" max="20" value="13" onchange="setFontSize(this.value)" oninput="setFontSize(this.value)">
+                <span id="fontSizeValue">13px</span>
+              </div>
+              <div class="setting-row">
+                <label>行間:</label>
+                <input type="range" id="lineHeightSlider" min="10" max="30" value="15" onchange="setLineHeight(this.value)" oninput="setLineHeight(this.value)">
+                <span id="lineHeightValue">1.5</span>
+              </div>
+            </div>
+            <div class="setting-section">
+              <div class="setting-section-header">
+                <span class="setting-section-title">🎨 ハイライト色</span>
+                <button class="btn-reset" onclick="resetColors()">リセット</button>
+              </div>
+              <div class="setting-row">
+                <label>削除:</label>
+                <input type="color" id="colorDelete" value="#d63031" onchange="updateHighlightColor()">
+              </div>
+              <div class="setting-row">
+                <label>挿入:</label>
+                <input type="color" id="colorInsert" value="#00a86b" onchange="updateHighlightColor()">
+              </div>
+              <div class="setting-row">
+                <label>改行:</label>
+                <input type="color" id="colorChange" value="#e67e22" onchange="updateHighlightColor()">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="diff-container">
       <table class="diff-table" id="diffTable">
         <thead>
           <tr>
+            <th class="line-num-col">#</th>
             <th>テキスト A</th>
             <th>テキスト B</th>
           </tr>
@@ -984,6 +1288,28 @@ function toggleDiffOnly() {
   updateDiffOnlyButton();
 }
 
+// 結果のみ表示（印刷用）トグル
+let resultOnlyMode = false;
+
+function updateResultOnlyButton() {
+  const btn = document.getElementById('toggleResultOnlyBtn');
+  if (!btn) return;
+
+  if (resultOnlyMode) {
+    btn.textContent = '全体を表示';
+    btn.classList.add('is-active');
+  } else {
+    btn.textContent = '結果のみ表示';
+    btn.classList.remove('is-active');
+  }
+}
+
+function toggleResultOnly() {
+  resultOnlyMode = !resultOnlyMode;
+  document.body.classList.toggle('result-only-mode', resultOnlyMode);
+  updateResultOnlyButton();
+}
+
 // メイン比較関数
 function compare() {
   const textA = document.getElementById('textA').value;
@@ -1004,10 +1330,14 @@ function compare() {
   // 差分があるかチェック
   const hasDiff = diff.some(d => d.type !== 'equal');
   
+  // 差分カウント用
+  let deleteCount = 0;
+  let insertCount = 0;
+  
   if (!hasDiff && textA === textB) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="2">
+        <td colspan="3">
           <div class="no-diff">
             <div class="no-diff-icon">✓</div>
             <p>差分はありません。両方のテキストは同一です。</p>
@@ -1015,8 +1345,10 @@ function compare() {
         </td>
       </tr>
     `;
+    document.getElementById('diffStats').innerHTML = '';
   } else {
     // 差分行を表示
+    let lineNum = 1;
     for (const row of rows) {
       const tr = document.createElement('tr');
 
@@ -1025,7 +1357,18 @@ function compare() {
                          row.b.tokens.some(t => t.type === 'insert' || (t.type && t.type.startsWith('newline')));
       if (!rowHasDiff) {
         tr.classList.add('no-diff-row');
+      } else {
+        // 差分カウント
+        deleteCount += row.a.tokens.filter(t => t.type === 'delete').length;
+        insertCount += row.b.tokens.filter(t => t.type === 'insert').length;
       }
+      
+      // 行番号セル
+      const tdNum = document.createElement('td');
+      tdNum.className = 'line-num';
+      tdNum.textContent = lineNum++;
+      tr.appendChild(tdNum);
+      
       const tdA = document.createElement('td');
       const tdB = document.createElement('td');
       
@@ -1044,6 +1387,12 @@ function compare() {
       tr.appendChild(tdB);
       tbody.appendChild(tr);
     }
+    
+    // 差分カウント表示
+    document.getElementById('diffStats').innerHTML = `
+      <span class="stat-delete">削除: ${deleteCount}</span>
+      <span class="stat-insert">挿入: ${insertCount}</span>
+    `;
   }
   
   // 統計情報を追加
@@ -1053,6 +1402,7 @@ function compare() {
   const statsTr = document.createElement('tr');
   statsTr.className = 'stats-row';
   statsTr.innerHTML = `
+    <td class="line-num"></td>
     <td>
       <dl class="stats">
         <div class="stats-line"><dt>文字数</dt><dd>${statsA.chars}</dd></div>
@@ -1166,6 +1516,31 @@ function setTheme(theme) {
   // ドラッグ&ドロップのセットアップ
   setupDragDrop('panelA', 'textA');
   setupDragDrop('panelB', 'textB');
+  
+  // フォントサイズ復元
+  const fontSize = urlParams.get('fontSize') || '13';
+  setFontSize(fontSize, true);
+  
+  // 行間復元
+  const lineHeight = urlParams.get('lineHeight') || '15';
+  setLineHeight(lineHeight, true);
+  
+  // ハイライト色復元
+  const colorDelete = urlParams.get('colorDelete');
+  const colorInsert = urlParams.get('colorInsert');
+  const colorChange = urlParams.get('colorChange');
+  if (colorDelete) document.getElementById('colorDelete').value = '#' + colorDelete;
+  if (colorInsert) document.getElementById('colorInsert').value = '#' + colorInsert;
+  if (colorChange) document.getElementById('colorChange').value = '#' + colorChange;
+  updateHighlightColor();
+  
+  // キーボードショートカット
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.key === 'Enter') {
+      e.preventDefault();
+      compare();
+    }
+  });
 })();
 
 // ファイル読み込み
@@ -1376,10 +1751,10 @@ async function downloadExcel() {
     to: { row: 1, column: 6 }
   };
   
-  // 色定義
+  // 色定義（削除・挿入ともに赤）
   const colors = {
-    delete: { font: 'FFCC0000', bg: 'FFFFD9D9' },
-    insert: { font: 'FF006600', bg: 'FFD9FFD9' },
+    delete: { font: 'FFFF0000', bg: 'FFFFD9D9' },
+    insert: { font: 'FFFF0000', bg: 'FFFFD9D9' },
     newline: { font: 'FF996600', bg: 'FFFFF0D9' }
   };
   
@@ -1424,8 +1799,8 @@ async function downloadExcel() {
     excelRow.alignment = { wrapText: true, vertical: 'top' };
   });
   
-  // 統計情報（右側に配置）
-  const statsStartCol = 10;
+  // 統計情報（右側に配置、1列空けてH列から）
+  const statsStartCol = 8;
   
   // 統計ヘッダー
   ws.getCell(1, statsStartCol).value = '統計情報';
@@ -1549,6 +1924,227 @@ function applyRichText(cell, tokens, colors) {
 
   cell.value = { richText };
 }
+
+// フォントサイズ設定
+function setFontSize(size, skipUrl = false) {
+  const sizeNum = parseInt(size);
+  document.documentElement.style.setProperty('--diff-font-size', sizeNum + 'px');
+  document.getElementById('fontSizeSlider').value = sizeNum;
+  document.getElementById('fontSizeValue').textContent = sizeNum + 'px';
+  
+  // テーブルのフォントサイズを更新
+  const diffTable = document.querySelector('.diff-table');
+  if (diffTable) {
+    diffTable.style.fontSize = sizeNum + 'px';
+  }
+  
+  if (!skipUrl) {
+    updateTextSettingsUrl();
+  }
+}
+
+// 行間設定
+function setLineHeight(value, skipUrl = false) {
+  const valueNum = parseInt(value);
+  const lineHeight = valueNum / 10;
+  document.documentElement.style.setProperty('--diff-line-height', lineHeight);
+  document.getElementById('lineHeightSlider').value = valueNum;
+  document.getElementById('lineHeightValue').textContent = lineHeight.toFixed(1);
+  
+  // テーブルの行間を更新
+  const diffTable = document.querySelector('.diff-table');
+  if (diffTable) {
+    diffTable.style.lineHeight = lineHeight;
+  }
+  
+  if (!skipUrl) {
+    updateTextSettingsUrl();
+  }
+}
+
+// URLパラメータを更新
+function updateTextSettingsUrl() {
+  const url = new URL(window.location);
+  const fontSize = parseInt(document.getElementById('fontSizeSlider').value);
+  const lineHeight = parseInt(document.getElementById('lineHeightSlider').value);
+  
+  if (fontSize === 13) {
+    url.searchParams.delete('fontSize');
+  } else {
+    url.searchParams.set('fontSize', fontSize);
+  }
+  
+  if (lineHeight === 15) {
+    url.searchParams.delete('lineHeight');
+  } else {
+    url.searchParams.set('lineHeight', lineHeight);
+  }
+  
+  window.history.replaceState({}, '', url);
+}
+
+// テキスト設定リセット
+function resetTextSettings() {
+  setFontSize(13);
+  setLineHeight(15);
+}
+
+// テキスト設定ポップアップのトグル
+function toggleTextSettings() {
+  const popup = document.getElementById('textPopup');
+  popup.classList.toggle('visible');
+}
+
+// ハイライト色の更新
+function updateHighlightColor() {
+  const colorDelete = document.getElementById('colorDelete').value;
+  const colorInsert = document.getElementById('colorInsert').value;
+  const colorChange = document.getElementById('colorChange').value;
+  
+  // CSS変数を更新
+  document.documentElement.style.setProperty('--delete', colorDelete);
+  document.documentElement.style.setProperty('--delete-bg', colorDelete + '20');
+  document.documentElement.style.setProperty('--insert', colorInsert);
+  document.documentElement.style.setProperty('--insert-bg', colorInsert + '20');
+  document.documentElement.style.setProperty('--change', colorChange);
+  document.documentElement.style.setProperty('--change-bg', colorChange + '20');
+  
+  // URLパラメータを更新
+  const url = new URL(window.location);
+  const defaultDelete = '#d63031';
+  const defaultInsert = '#00a86b';
+  const defaultChange = '#e67e22';
+  
+  if (colorDelete !== defaultDelete) {
+    url.searchParams.set('colorDelete', colorDelete.slice(1));
+  } else {
+    url.searchParams.delete('colorDelete');
+  }
+  if (colorInsert !== defaultInsert) {
+    url.searchParams.set('colorInsert', colorInsert.slice(1));
+  } else {
+    url.searchParams.delete('colorInsert');
+  }
+  if (colorChange !== defaultChange) {
+    url.searchParams.set('colorChange', colorChange.slice(1));
+  } else {
+    url.searchParams.delete('colorChange');
+  }
+  window.history.replaceState({}, '', url);
+}
+
+// 色設定をリセット
+function resetColors() {
+  document.getElementById('colorDelete').value = '#d63031';
+  document.getElementById('colorInsert').value = '#00a86b';
+  document.getElementById('colorChange').value = '#e67e22';
+  updateHighlightColor();
+}
+
+// PDFダウンロード
+async function downloadPDF() {
+  const { jsPDF } = window.jspdf;
+  
+  // 結果のみ表示モードに
+  const wasResultOnly = resultOnlyMode;
+  if (!wasResultOnly) {
+    toggleResultOnly();
+  }
+  
+  // ボタンを一時的に非表示
+  const resultsActions = document.querySelector('.results-actions');
+  const originalDisplay = resultsActions.style.display;
+  resultsActions.style.display = 'none';
+  
+  try {
+    const element = document.getElementById('results');
+    
+    // html2canvasで画像化
+    const canvas = await html2canvas(element, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff'
+    });
+    
+    const imgData = canvas.toDataURL('image/png');
+    const imgWidth = canvas.width;
+    const imgHeight = canvas.height;
+    
+    // A4サイズでPDF作成（横向き）
+    const pdf = new jsPDF({
+      orientation: imgWidth > imgHeight ? 'landscape' : 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+    
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    
+    // 画像をPDFに合わせてスケール
+    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+    const scaledWidth = imgWidth * ratio;
+    const scaledHeight = imgHeight * ratio;
+    
+    // 中央配置
+    const x = (pdfWidth - scaledWidth) / 2;
+    const y = 10;
+    
+    // 複数ページ対応
+    const pageHeight = pdfHeight - 20; // マージン分引く
+    let remainingHeight = scaledHeight;
+    let srcY = 0;
+    
+    while (remainingHeight > 0) {
+      if (srcY > 0) {
+        pdf.addPage();
+      }
+      
+      const drawHeight = Math.min(pageHeight, remainingHeight);
+      const srcHeight = (drawHeight / ratio);
+      
+      // 部分的に描画
+      const partCanvas = document.createElement('canvas');
+      partCanvas.width = imgWidth;
+      partCanvas.height = srcHeight;
+      const ctx = partCanvas.getContext('2d');
+      ctx.drawImage(canvas, 0, srcY, imgWidth, srcHeight, 0, 0, imgWidth, srcHeight);
+      
+      const partImgData = partCanvas.toDataURL('image/png');
+      pdf.addImage(partImgData, 'PNG', x, y, scaledWidth, drawHeight);
+      
+      srcY += srcHeight;
+      remainingHeight -= drawHeight;
+    }
+    
+    // ダウンロード
+    const now = new Date();
+    const timestamp = now.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '_');
+    pdf.save(`DiffView_${timestamp}.pdf`);
+    
+  } catch (error) {
+    console.error('PDF生成エラー:', error);
+    alert('PDF生成に失敗しました');
+  } finally {
+    // ボタンを復元
+    resultsActions.style.display = originalDisplay;
+    
+    // 元に戻す
+    if (!wasResultOnly) {
+      toggleResultOnly();
+    }
+  }
+}
+
+// ポップアップの外側クリックで閉じる
+document.addEventListener('click', (e) => {
+  const textPopup = document.getElementById('textPopup');
+  const textSettings = document.querySelector('.text-settings');
+  
+  if (textPopup && textSettings && !textSettings.contains(e.target)) {
+    textPopup.classList.remove('visible');
+  }
+});
 </script>
 </body>
 </html>
