@@ -4,12 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DiffView《ﾃﾞｨﾌﾋﾞｭｰ》- テキスト比較ツール</title>
+
+<!-- Favicon (single-file) -->
+<link id="favicon" rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzBiMTIyMCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMwNzRhNmIiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9InBhbmVMIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzBmMmEzZiIgc3RvcC1vcGFjaXR5PSIwLjk1Ii8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzBhMTgyYyIgc3RvcC1vcGFjaXR5PSIwLjk1Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJwYW5lUiIgeDE9IjAiIHkxPSIwIiB4Mj0iMCIgeTI9IjEiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiMwYjYyODYiIHN0b3Atb3BhY2l0eT0iMC45MCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMwODM1NTEiIHN0b3Atb3BhY2l0eT0iMC45MCIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ic2hpbmUiIHgxPSIwIiB5MT0iMCIgeDI9IjEiIHkyPSIwIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjM2RkY2ZmIiBzdG9wLW9wYWNpdHk9IjAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIwLjM1IiBzdG9wLWNvbG9yPSIjM2RkY2ZmIiBzdG9wLW9wYWNpdHk9IjAuMjIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIwLjY1IiBzdG9wLWNvbG9yPSIjM2RkY2ZmIiBzdG9wLW9wYWNpdHk9IjAuMTAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjM2RkY2ZmIiBzdG9wLW9wYWNpdHk9IjAiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8ZmlsdGVyIGlkPSJzaGFkb3ciIHg9Ii0yMCUiIHk9Ii0yMCUiIHdpZHRoPSIxNDAlIiBoZWlnaHQ9IjE0MCUiPgogICAgICA8ZmVEcm9wU2hhZG93IGR4PSIwIiBkeT0iMS4yIiBzdGREZXZpYXRpb249IjEuNCIgZmxvb2QtY29sb3I9IiMwMDAiIGZsb29kLW9wYWNpdHk9IjAuNTUiLz4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBCYWNrZ3JvdW5kIC0tPgogIDxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSJ1cmwoI2JnKSIvPgoKICA8IS0tIERpZmYgcGFuZXMgLS0+CiAgPHJlY3QgeD0iOCIgeT0iMTAiIHdpZHRoPSIyNSIgaGVpZ2h0PSI0NCIgcng9IjEwIiBmaWxsPSJ1cmwoI3BhbmVMKSIvPgogIDxyZWN0IHg9IjMxIiB5PSIxMCIgd2lkdGg9IjI1IiBoZWlnaHQ9IjQ0IiByeD0iMTAiIGZpbGw9InVybCgjcGFuZVIpIi8+CgogIDwhLS0gQ2VudGVyIHNwbGl0IC0tPgogIDxwYXRoIGQ9Ik0zMiAxNCBWNTAiIHN0cm9rZT0iIzNkZGNmZiIgc3Ryb2tlLW9wYWNpdHk9IjAuMjgiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CgogIDwhLS0gVG9wIHNoaW5lIC0tPgogIDxwYXRoIGQ9Ik02IDE4IEMxOCAxMCwgNDYgMTAsIDU4IDE4IiBzdHJva2U9InVybCgjc2hpbmUpIiBzdHJva2Utd2lkdGg9IjYiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICA8IS0tIEJvcmRlciAtLT4KICA8cmVjdCB4PSIyLjI1IiB5PSIyLjI1IiB3aWR0aD0iNTkuNSIgaGVpZ2h0PSI1OS41IiByeD0iMTMiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzNkZGNmZiIgc3Ryb2tlLW9wYWNpdHk9IjAuMjIiIHN0cm9rZS13aWR0aD0iMi41Ii8+CgogIDwhLS0gTW9ub2dyYW0gLS0+CiAgPGcgZmlsdGVyPSJ1cmwoI3NoYWRvdykiPgogICAgPHRleHQgeD0iMzIiIHk9IjQyIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIgogICAgICAgICAgZm9udC1mYW1pbHk9IlNlZ29lIFVJLCBBcmlhbCBCbGFjaywgQXJpYWwsIHNhbnMtc2VyaWYiCiAgICAgICAgICBmb250LXNpemU9IjI4IiBmb250LXdlaWdodD0iOTAwIiBsZXR0ZXItc3BhY2luZz0iLTEuMiIKICAgICAgICAgIGZpbGw9IiNmZmZmZmYiPkRGPC90ZXh0PgogIDwvZz4KCiAgPCEtLSBTbWFsbCArLy0gbWFya3MgZm9yICJkaWZmIiBmZWVsIChrZXB0IGNodW5reSBmb3IgMTZweCByZWFkYWJpbGl0eSkgLS0+CiAgPGcgZmlsbD0iIzNkZGNmZiIgZmlsbC1vcGFjaXR5PSIwLjYwIj4KICAgIDwhLS0gbWludXMgKGxlZnQpIC0tPgogICAgPHJlY3QgeD0iMTQiIHk9IjE4IiB3aWR0aD0iOCIgaGVpZ2h0PSIyLjIiIHJ4PSIxLjEiLz4KICAgIDwhLS0gcGx1cyAocmlnaHQpIC0tPgogICAgPHJlY3QgeD0iNDMiIHk9IjE4IiB3aWR0aD0iOCIgaGVpZ2h0PSIyLjIiIHJ4PSIxLjEiLz4KICAgIDxyZWN0IHg9IjQ2LjkiIHk9IjE0LjEiIHdpZHRoPSIyLjIiIGhlaWdodD0iMTAiIHJ4PSIxLjEiLz4KICA8L2c+Cjwvc3ZnPgo=">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root {
   --bg: #f5f5f7;
@@ -172,7 +173,7 @@ h1 span.katakana {
 }
 
 .input-label {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: monospace;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -228,7 +229,7 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 12px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: monospace;
   font-size: 0.8rem;
   color: var(--text);
   resize: vertical;
@@ -517,7 +518,7 @@ body.result-only-mode .results-section {
 
 .results-title::before {
   content: '⟨⟩';
-  font-family: 'JetBrains Mono', monospace;
+  font-family: monospace;
   color: var(--accent);
 }
 
@@ -536,7 +537,7 @@ body.result-only-mode .results-section {
 .legend-badge {
   padding: 1px 6px;
   border-radius: 3px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: monospace;
   font-size: 0.7rem;
 }
 
@@ -576,7 +577,7 @@ body.result-only-mode .results-section {
   background: var(--surface-raised);
   padding: 6px 12px;
   text-align: left;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: monospace;
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -587,7 +588,7 @@ body.result-only-mode .results-section {
 .diff-table td {
   padding: 4px 12px;
   vertical-align: top;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: monospace;
   font-size: inherit;
   line-height: var(--diff-line-height, 1.5);
   border-bottom: 1px solid var(--border);
@@ -613,8 +614,6 @@ body.result-only-mode .results-section {
   background: var(--delete-bg);
   color: var(--delete);
   border-radius: 3px;
-  padding: 1px 2px;
-  text-decoration: line-through;
   text-decoration-color: rgba(255, 107, 138, 0.5);
 }
 
@@ -622,12 +621,10 @@ body.result-only-mode .results-section {
   background: var(--insert-bg);
   color: var(--insert);
   border-radius: 3px;
-  padding: 1px 2px;
 }
 
 /* Space characters - individual highlight */
 .space-char {
-  margin: 0 1px;
   min-width: 0.5em;
 }
 
@@ -640,7 +637,7 @@ body.result-only-mode .results-section {
 
 /* Newline markers */
 .newline-marker {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: monospace;
   font-size: 0.85rem;
   padding: 1px 4px;
   border-radius: 3px;
@@ -967,8 +964,7 @@ footer a:hover {
       <div class="results-actions">
         <button class="btn-secondary btn-small" id="toggleDiffOnlyBtn" onclick="toggleDiffOnly()">差分のみ表示</button>
         <button class="btn-secondary btn-small" id="toggleResultOnlyBtn" onclick="toggleResultOnly()">結果のみ表示</button>
-        <button class="btn-secondary btn-small" onclick="downloadExcel()">📥 Excel</button>
-        <button class="btn-secondary btn-small" onclick="downloadPDF()">📄 PDF</button>
+        <button class="btn-secondary btn-small" onclick="downloadExcel()">📥 Excelダウンロード</button>
         <button class="btn-secondary btn-small" onclick="window.print()">🖨 印刷</button>
         <div class="text-settings">
           <button class="btn-secondary btn-small" onclick="toggleTextSettings()">⚙ 表示設定</button>
@@ -1700,7 +1696,11 @@ function tokensToPlain(tokens) {
   let s = '';
   for (const t of tokens) {
     if (!t) continue;
-    if (t.type && String(t.type).startsWith('newline')) continue;
+    // newlineトークンは実際の改行として出力
+    if (t.type && String(t.type).startsWith('newline')) {
+      s += '\n';
+      continue;
+    }
     if (typeof t.value === 'string') s += t.value;
   }
   return s;
@@ -1728,14 +1728,14 @@ async function downloadExcel() {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('比較結果');
   
-  // 列幅設定
+  // 列幅は後で自動計算するため、初期値は設定しない
   ws.columns = [
-    { width: 6 },   // No
-    { width: 70 },  // テキストA（差分␣/↵表示）
-    { width: 70 },  // テキストB（差分␣/↵表示）
-    { width: 10 },  // 一致判定
-    { width: 60 },  // テキストA（原文）
-    { width: 60 }   // テキストB（原文）
+    { key: 'no' },
+    { key: 'diffA' },
+    { key: 'diffB' },
+    { key: 'match' },
+    { key: 'rawA' },
+    { key: 'rawB' }
   ];
   
   // ヘッダー行
@@ -1825,29 +1825,72 @@ async function downloadExcel() {
     ws.getCell(i + 2, statsStartCol + 2).value = stat[2];
   });
   
-  // 統計列の幅
-  ws.getColumn(statsStartCol).width = 18;
-  ws.getColumn(statsStartCol + 1).width = 12;
-  ws.getColumn(statsStartCol + 2).width = 12;
+  // 列幅を内容に基づいて自動計算
+  function autoFitColumn(worksheet, columnNumber, minWidth = 8, maxWidth = 200) {
+    let maxLength = 0;
+    worksheet.getColumn(columnNumber).eachCell({ includeEmpty: false }, (cell) => {
+      let cellLength = 0;
+      if (cell.value && cell.value.richText) {
+        // リッチテキストの場合
+        const text = cell.value.richText.map(r => r.text).join('');
+        const lines = text.split('\n');
+        cellLength = Math.max(...lines.map(line => {
+          // 全角文字は2.5、半角は1としてカウント（余裕を持たせる）
+          let len = 0;
+          for (const char of line) {
+            len += char.charCodeAt(0) > 255 ? 2.5 : 1;
+          }
+          return len;
+        }));
+      } else if (cell.value != null) {
+        const text = String(cell.value);
+        const lines = text.split('\n');
+        cellLength = Math.max(...lines.map(line => {
+          let len = 0;
+          for (const char of line) {
+            len += char.charCodeAt(0) > 255 ? 2.5 : 1;
+          }
+          return len;
+        }));
+      }
+      maxLength = Math.max(maxLength, cellLength);
+    });
+    // 幅を設定（余白+4を追加）
+    worksheet.getColumn(columnNumber).width = Math.min(maxWidth, Math.max(minWidth, maxLength + 4));
+  }
   
-  // 行の高さを内容に合わせて自動調整
+  // 各列の幅を自動調整（テキスト列は最大幅を大きめに）
+  autoFitColumn(ws, 1, 6, 10);    // No列
+  autoFitColumn(ws, 2, 20, 200);  // テキストA（差分）
+  autoFitColumn(ws, 3, 20, 200);  // テキストB（差分）
+  autoFitColumn(ws, 4, 8, 12);    // 一致判定
+  
+  // E,F列（原文）はB,C列（差分）と同じ幅にする
+  const widthB = ws.getColumn(2).width;
+  const widthC = ws.getColumn(3).width;
+  ws.getColumn(5).width = widthB;  // テキストA（原文）= テキストA（差分）と同じ
+  ws.getColumn(6).width = widthC;  // テキストB（原文）= テキストB（差分）と同じ
+  
+  // 統計列の幅を自動調整
+  autoFitColumn(ws, statsStartCol, 15, 25);
+  autoFitColumn(ws, statsStartCol + 1, 10, 20);
+  autoFitColumn(ws, statsStartCol + 2, 10, 20);
+  
+  // 行の高さを内容に基づいて自動計算
   ws.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) {
-      row.height = 20; // ヘッダー行
-      return;
-    }
-    // テキスト内の改行数を数えて高さを計算
     let maxLines = 1;
-    row.eachCell((cell) => {
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      let lines = 1;
       if (cell.value && cell.value.richText) {
         const text = cell.value.richText.map(r => r.text).join('');
-        const lines = (text.match(/\n/g) || []).length + 1;
-        maxLines = Math.max(maxLines, lines);
-      } else if (typeof cell.value === 'string') {
-        const lines = (cell.value.match(/\n/g) || []).length + 1;
-        maxLines = Math.max(maxLines, lines);
+        lines = (text.match(/\n/g) || []).length + 1;
+      } else if (cell.value != null) {
+        const text = String(cell.value);
+        lines = (text.match(/\n/g) || []).length + 1;
       }
+      maxLines = Math.max(maxLines, lines);
     });
+    // 行の高さを設定（1行あたり15ポイント、最小15）
     row.height = Math.max(15, maxLines * 15);
   });
   
@@ -1865,17 +1908,42 @@ async function downloadExcel() {
 }
 
 // リッチテキストを適用（Excel出力用：␣/↵ は差分（insert/delete/newline）部分だけに表示し、ハイライトは維持）
-function applyRichText(cell, tokens, colors) {
+function applyRichText(cell, tokens, colors, baseFontSize = 11) {
   const monoName = 'Consolas';
+  const smallFontSize = Math.max(6, Math.round(baseFontSize / 2)); // スペース記号用の半分サイズ
 
   // 空の場合は空文字（差分表示記号は付けない）
   if (!tokens || tokens.length === 0) {
     cell.value = '';
-    cell.font = { name: monoName };
+    cell.font = { name: monoName, size: baseFontSize };
     return;
   }
 
   const richText = [];
+
+  // テキストをスペース記号で分割してリッチテキストに追加するヘルパー関数
+  function addTextWithSmallSpaces(text, baseFont) {
+    if (!text) return;
+    
+    // スペース記号（␣）で分割
+    const parts = text.split(/(␣+)/);
+    for (const part of parts) {
+      if (!part) continue;
+      if (/^␣+$/.test(part)) {
+        // スペース記号部分は半分のサイズ
+        richText.push({
+          text: part,
+          font: { ...baseFont, size: smallFontSize }
+        });
+      } else {
+        // 通常テキスト
+        richText.push({
+          text: part,
+          font: { ...baseFont, size: baseFontSize }
+        });
+      }
+    }
+  }
 
   for (const token of tokens) {
     if (!token) continue;
@@ -1884,7 +1952,7 @@ function applyRichText(cell, tokens, colors) {
     if (token.type === 'newline-delete' || token.type === 'newline-insert') {
       richText.push({
         text: '↵\n',
-        font: { name: monoName, color: { argb: colors.newline.font }, bold: true }
+        font: { name: monoName, size: baseFontSize, color: { argb: colors.newline.font }, bold: true }
       });
       continue;
     }
@@ -1899,26 +1967,21 @@ function applyRichText(cell, tokens, colors) {
     if (!txt) continue;
 
     if (token.type === 'delete') {
-      richText.push({
-        text: txt,
-        font: { name: monoName, color: { argb: colors.delete.font }, strike: true }
-      });
+      addTextWithSmallSpaces(txt, { name: monoName, color: { argb: colors.delete.font } });
     } else if (token.type === 'insert') {
-      richText.push({
-        text: txt,
-        font: { name: monoName, color: { argb: colors.insert.font }, bold: true }
-      });
+      addTextWithSmallSpaces(txt, { name: monoName, color: { argb: colors.insert.font }, bold: true });
     } else {
+      // 通常テキストはそのまま（スペース記号なし）
       richText.push({
         text: txt,
-        font: { name: monoName }
+        font: { name: monoName, size: baseFontSize }
       });
     }
   }
 
   if (richText.length === 0) {
     cell.value = '';
-    cell.font = { name: monoName };
+    cell.font = { name: monoName, size: baseFontSize };
     return;
   }
 
@@ -2039,101 +2102,6 @@ function resetColors() {
   document.getElementById('colorInsert').value = '#00a86b';
   document.getElementById('colorChange').value = '#e67e22';
   updateHighlightColor();
-}
-
-// PDFダウンロード
-async function downloadPDF() {
-  const { jsPDF } = window.jspdf;
-  
-  // 結果のみ表示モードに
-  const wasResultOnly = resultOnlyMode;
-  if (!wasResultOnly) {
-    toggleResultOnly();
-  }
-  
-  // ボタンを一時的に非表示
-  const resultsActions = document.querySelector('.results-actions');
-  const originalDisplay = resultsActions.style.display;
-  resultsActions.style.display = 'none';
-  
-  try {
-    const element = document.getElementById('results');
-    
-    // html2canvasで画像化
-    const canvas = await html2canvas(element, {
-      scale: 2,
-      useCORS: true,
-      logging: false,
-      backgroundColor: '#ffffff'
-    });
-    
-    const imgData = canvas.toDataURL('image/png');
-    const imgWidth = canvas.width;
-    const imgHeight = canvas.height;
-    
-    // A4サイズでPDF作成（横向き）
-    const pdf = new jsPDF({
-      orientation: imgWidth > imgHeight ? 'landscape' : 'portrait',
-      unit: 'mm',
-      format: 'a4'
-    });
-    
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
-    
-    // 画像をPDFに合わせてスケール
-    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-    const scaledWidth = imgWidth * ratio;
-    const scaledHeight = imgHeight * ratio;
-    
-    // 中央配置
-    const x = (pdfWidth - scaledWidth) / 2;
-    const y = 10;
-    
-    // 複数ページ対応
-    const pageHeight = pdfHeight - 20; // マージン分引く
-    let remainingHeight = scaledHeight;
-    let srcY = 0;
-    
-    while (remainingHeight > 0) {
-      if (srcY > 0) {
-        pdf.addPage();
-      }
-      
-      const drawHeight = Math.min(pageHeight, remainingHeight);
-      const srcHeight = (drawHeight / ratio);
-      
-      // 部分的に描画
-      const partCanvas = document.createElement('canvas');
-      partCanvas.width = imgWidth;
-      partCanvas.height = srcHeight;
-      const ctx = partCanvas.getContext('2d');
-      ctx.drawImage(canvas, 0, srcY, imgWidth, srcHeight, 0, 0, imgWidth, srcHeight);
-      
-      const partImgData = partCanvas.toDataURL('image/png');
-      pdf.addImage(partImgData, 'PNG', x, y, scaledWidth, drawHeight);
-      
-      srcY += srcHeight;
-      remainingHeight -= drawHeight;
-    }
-    
-    // ダウンロード
-    const now = new Date();
-    const timestamp = now.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '_');
-    pdf.save(`DiffView_${timestamp}.pdf`);
-    
-  } catch (error) {
-    console.error('PDF生成エラー:', error);
-    alert('PDF生成に失敗しました');
-  } finally {
-    // ボタンを復元
-    resultsActions.style.display = originalDisplay;
-    
-    // 元に戻す
-    if (!wasResultOnly) {
-      toggleResultOnly();
-    }
-  }
 }
 
 // ポップアップの外側クリックで閉じる
