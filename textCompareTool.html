@@ -935,6 +935,7 @@ footer a:hover {
         <div class="input-actions">
           <button class="sort-input-btn" onclick="sortInput('textA', 'asc')" title="昇順ソート">▲</button>
           <button class="sort-input-btn" onclick="sortInput('textA', 'desc')" title="降順ソート">▼</button>
+          <button class="sort-input-btn" onclick="removeDuplicates('textA')" title="重複行を削除">重複行削除</button>
           <label class="file-input">
             <input type="file" accept=".txt,.md,.html,.htm,.xht,.xhtml,.css,.js,.json,.xml,.csv,.java,.properties,.gradle,.kt,.scala,.groovy,.yml,.yaml,.pom" onchange="loadFile(event, 'textA')">
             <span>📁 ファイル</span>
@@ -949,6 +950,7 @@ footer a:hover {
         <div class="input-actions">
           <button class="sort-input-btn" onclick="sortInput('textB', 'asc')" title="昇順ソート">▲</button>
           <button class="sort-input-btn" onclick="sortInput('textB', 'desc')" title="降順ソート">▼</button>
+          <button class="sort-input-btn" onclick="removeDuplicates('textB')" title="重複行を削除">重複行削除</button>
           <label class="file-input">
             <input type="file" accept=".txt,.md,.html,.htm,.xht,.xhtml,.css,.js,.json,.xml,.csv,.java,.properties,.gradle,.kt,.scala,.groovy,.yml,.yaml,.pom" onchange="loadFile(event, 'textB')">
             <span>📁 ファイル</span>
@@ -1085,6 +1087,31 @@ function sortInput(textareaId, order) {
   
   // 結合して戻す
   textarea.value = lines.join('\n');
+}
+
+// 入力欄の重複行を削除
+function removeDuplicates(textareaId) {
+  const textarea = document.getElementById(textareaId);
+  if (!textarea) return;
+  
+  const text = textarea.value;
+  if (!text.trim()) return;
+  
+  // 行に分割
+  const lines = text.split('\n');
+  
+  // 重複を削除（順序を保持）
+  const seen = new Set();
+  const uniqueLines = lines.filter(line => {
+    if (seen.has(line)) {
+      return false;
+    }
+    seen.add(line);
+    return true;
+  });
+  
+  // 結合して戻す
+  textarea.value = uniqueLines.join('\n');
 }
 
 // テキストを比較単位に分割（単語または文字単位）
