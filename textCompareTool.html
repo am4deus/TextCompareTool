@@ -204,6 +204,29 @@ h1 span.katakana {
   border-color: var(--accent);
 }
 
+.input-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sort-input-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sort-input-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+
 .input-panel.drag-over textarea {
   border-color: var(--accent);
   background: var(--accent-glow);
@@ -909,20 +932,28 @@ footer a:hover {
     <div class="input-panel" id="panelA">
       <div class="input-header">
         <label class="input-label">テキスト A（元のテキスト）</label>
-        <label class="file-input">
-          <input type="file" accept=".txt,.md,.html,.htm,.xht,.xhtml,.css,.js,.json,.xml,.csv,.java,.properties,.gradle,.kt,.scala,.groovy,.yml,.yaml,.pom" onchange="loadFile(event, 'textA')">
-          <span>📁 ファイル</span>
-        </label>
+        <div class="input-actions">
+          <button class="sort-input-btn" onclick="sortInput('textA', 'asc')" title="昇順ソート">▲</button>
+          <button class="sort-input-btn" onclick="sortInput('textA', 'desc')" title="降順ソート">▼</button>
+          <label class="file-input">
+            <input type="file" accept=".txt,.md,.html,.htm,.xht,.xhtml,.css,.js,.json,.xml,.csv,.java,.properties,.gradle,.kt,.scala,.groovy,.yml,.yaml,.pom" onchange="loadFile(event, 'textA')">
+            <span>📁 ファイル</span>
+          </label>
+        </div>
       </div>
       <textarea id="textA" placeholder="テキストを入力、またはファイルをドロップ..."></textarea>
     </div>
     <div class="input-panel" id="panelB">
       <div class="input-header">
         <label class="input-label">テキスト B（変更後のテキスト）</label>
-        <label class="file-input">
-          <input type="file" accept=".txt,.md,.html,.htm,.xht,.xhtml,.css,.js,.json,.xml,.csv,.java,.properties,.gradle,.kt,.scala,.groovy,.yml,.yaml,.pom" onchange="loadFile(event, 'textB')">
-          <span>📁 ファイル</span>
-        </label>
+        <div class="input-actions">
+          <button class="sort-input-btn" onclick="sortInput('textB', 'asc')" title="昇順ソート">▲</button>
+          <button class="sort-input-btn" onclick="sortInput('textB', 'desc')" title="降順ソート">▼</button>
+          <label class="file-input">
+            <input type="file" accept=".txt,.md,.html,.htm,.xht,.xhtml,.css,.js,.json,.xml,.csv,.java,.properties,.gradle,.kt,.scala,.groovy,.yml,.yaml,.pom" onchange="loadFile(event, 'textB')">
+            <span>📁 ファイル</span>
+          </label>
+        </div>
       </div>
       <textarea id="textB" placeholder="テキストを入力、またはファイルをドロップ..."></textarea>
     </div>
@@ -1035,6 +1066,27 @@ footer a:hover {
 </div>
 
 <script>
+// 入力欄のテキストを行単位でソート
+function sortInput(textareaId, order) {
+  const textarea = document.getElementById(textareaId);
+  if (!textarea) return;
+  
+  const text = textarea.value;
+  if (!text.trim()) return;
+  
+  // 行に分割
+  const lines = text.split('\n');
+  
+  // ソート（日本語対応）
+  lines.sort((a, b) => {
+    const result = a.localeCompare(b, 'ja');
+    return order === 'asc' ? result : -result;
+  });
+  
+  // 結合して戻す
+  textarea.value = lines.join('\n');
+}
+
 // テキストを比較単位に分割（単語または文字単位）
 function tokenize(text) {
   const tokens = [];
