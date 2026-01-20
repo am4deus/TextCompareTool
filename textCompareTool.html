@@ -1754,7 +1754,7 @@ async function downloadExcel() {
   // ヘッダー行
   const headerRow = ws.addRow(['No', 'テキスト A（差分␣/↵表示）', 'テキスト B（差分␣/↵表示）', '一致', 'テキスト A（原文）', 'テキスト B（原文）']);
   headerRow.eachCell(cell => {
-    cell.font = { bold: true };
+    cell.font = { name: 'ＭＳ ゴシック', bold: true };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
   });
   
@@ -1782,6 +1782,7 @@ async function downloadExcel() {
     // No列の書式
     const noCell = excelRow.getCell(1);
     noCell.alignment = { horizontal: 'center' };
+    noCell.font = { name: 'ＭＳ ゴシック' };
     
     // A列
     const cellA = excelRow.getCell(2);
@@ -1801,13 +1802,14 @@ async function downloadExcel() {
     cellRawB.value = rawB;
 
     // 見やすさのため等幅フォント
-    const monoFont = { name: 'Consolas' };
+    const monoFont = { name: 'ＭＳ ゴシック' };
     cellRawA.font = monoFont;
     cellRawB.font = monoFont;
     
     // 一致判定列の書式
     const matchCell = excelRow.getCell(4);
     matchCell.alignment = { horizontal: 'center' };
+    matchCell.font = { name: 'ＭＳ ゴシック' };
     
     excelRow.alignment = { wrapText: true, vertical: 'top' };
   });
@@ -1817,11 +1819,11 @@ async function downloadExcel() {
   
   // 統計ヘッダー
   ws.getCell(1, statsStartCol).value = '統計情報';
-  ws.getCell(1, statsStartCol).font = { bold: true };
+  ws.getCell(1, statsStartCol).font = { name: 'ＭＳ ゴシック', bold: true };
   ws.getCell(1, statsStartCol + 1).value = 'テキスト A';
-  ws.getCell(1, statsStartCol + 1).font = { bold: true };
+  ws.getCell(1, statsStartCol + 1).font = { name: 'ＭＳ ゴシック', bold: true };
   ws.getCell(1, statsStartCol + 2).value = 'テキスト B';
-  ws.getCell(1, statsStartCol + 2).font = { bold: true };
+  ws.getCell(1, statsStartCol + 2).font = { name: 'ＭＳ ゴシック', bold: true };
   
   const statsData = [
     ['文字数', statsA.chars, statsB.chars],
@@ -1833,9 +1835,13 @@ async function downloadExcel() {
   ];
   
   statsData.forEach((stat, i) => {
-    ws.getCell(i + 2, statsStartCol).value = stat[0];
-    ws.getCell(i + 2, statsStartCol + 1).value = stat[1];
-    ws.getCell(i + 2, statsStartCol + 2).value = stat[2];
+    const rowNum = i + 2;
+    ws.getCell(rowNum, statsStartCol).value = stat[0];
+    ws.getCell(rowNum, statsStartCol).font = { name: 'ＭＳ ゴシック' };
+    ws.getCell(rowNum, statsStartCol + 1).value = stat[1];
+    ws.getCell(rowNum, statsStartCol + 1).font = { name: 'ＭＳ ゴシック' };
+    ws.getCell(rowNum, statsStartCol + 2).value = stat[2];
+    ws.getCell(rowNum, statsStartCol + 2).font = { name: 'ＭＳ ゴシック' };
   });
   
   // 列幅を内容に基づいて自動計算
@@ -1913,17 +1919,19 @@ async function downloadExcel() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const now = new Date();
-  const timestamp = now.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '_');
+  // 日本時間（JST）でタイムスタンプを生成
+  const jstTimestamp = new Date(now.getTime() + 9 * 60 * 60 * 1000)
+    .toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '_');
   a.href = url;
-  a.download = `DiffView_${timestamp}.xlsx`;
+  a.download = `DiffView_${jstTimestamp}.xlsx`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
 // リッチテキストを適用（Excel出力用：␣/↵ は差分（insert/delete/newline）部分だけに表示し、ハイライトは維持）
 function applyRichText(cell, tokens, colors, baseFontSize = 11) {
-  const monoName = 'Consolas';
-  const smallFontSize = Math.max(6, Math.round(baseFontSize / 2)); // スペース記号用の半分サイズ
+  const monoName = 'ＭＳ ゴシック';
+  const smallFontSize = 5.5; // スペース記号用の半分サイズ
 
   // 空の場合は空文字（差分表示記号は付けない）
   if (!tokens || tokens.length === 0) {
@@ -1965,7 +1973,7 @@ function applyRichText(cell, tokens, colors, baseFontSize = 11) {
     if (token.type === 'newline-delete' || token.type === 'newline-insert') {
       richText.push({
         text: '↵\n',
-        font: { name: monoName, size: baseFontSize, color: { argb: colors.newline.font }, bold: true }
+        font: { name: monoName, size: baseFontSize, color: { argb: colors.newline.font } }
       });
       continue;
     }
@@ -1980,9 +1988,9 @@ function applyRichText(cell, tokens, colors, baseFontSize = 11) {
     if (!txt) continue;
 
     if (token.type === 'delete') {
-      addTextWithSmallSpaces(txt, { name: monoName, color: { argb: colors.delete.font }, bold: true });
+      addTextWithSmallSpaces(txt, { name: monoName, color: { argb: colors.delete.font } });
     } else if (token.type === 'insert') {
-      addTextWithSmallSpaces(txt, { name: monoName, color: { argb: colors.insert.font }, bold: true });
+      addTextWithSmallSpaces(txt, { name: monoName, color: { argb: colors.insert.font } });
     } else {
       // 通常テキストはそのまま（スペース記号なし）
       richText.push({
