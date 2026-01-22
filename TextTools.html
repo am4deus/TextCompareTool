@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TextTools《ﾃｷｽﾄﾂｰﾙｽﾞ》- テキスト処理ツール集</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/encoding-japanese/2.0.0/encoding.min.js"></script>
 
 <link id="favicon" rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9InRleHRHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iIzAwNzdjYyIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiMwMGZmY2MiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgogIDxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjEyIiBmaWxsPSIjZjVmNWY3Ii8+CiAgPHRleHQgeD0iMzIiIHk9IjQ2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIgogICAgICAgIGZvbnQtZmFtaWx5PSJCYWhuc2NocmlmdCwgJ1NlZ29lIFVJJywgc2Fucy1zZXJpZiIKICAgICAgICBmb250LXNpemU9IjM2IiBmb250LXdlaWdodD0iNTAwIgogICAgICAgIGZpbGw9InVybCgjdGV4dEdyYWQpIj5UVDwvdGV4dD4KPC9zdmc+Cg==">
 
@@ -292,6 +293,16 @@ textarea::placeholder {
   opacity: 0.6;
 }
 
+/* ドラッグ&ドロップ */
+.panel.drag-over {
+  border: 2px dashed var(--accent);
+  background: var(--accent-glow);
+}
+
+.panel.drag-over textarea {
+  pointer-events: none;
+}
+
 /* Buttons */
 button {
   font-family: inherit;
@@ -488,8 +499,8 @@ button {
 }
 
 .count-table th, .count-table td {
-  padding: 10px 16px;
-  text-align: center;
+  padding: 12px 16px;
+  text-align: left;
   border: 1px solid var(--border);
 }
 
@@ -497,17 +508,23 @@ button {
   background: var(--bg);
   font-weight: 600;
   color: var(--text);
+  text-align: center;
 }
 
-.count-table td:first-child {
+.count-table td:nth-child(odd) {
   background: var(--bg);
   font-weight: 500;
-  text-align: left;
+  color: var(--text-muted);
+  width: 100px;
 }
 
-.count-table td:not(:first-child) {
+.count-table td:nth-child(even) {
+  text-align: right;
+  color: var(--text);
+}
+
+.count-table td:nth-child(even) strong {
   font-size: 1.1rem;
-  font-weight: 600;
   color: var(--accent);
 }
 
@@ -534,6 +551,64 @@ button {
 .word-freq-table td:nth-child(2),
 .word-freq-table td:nth-child(3) {
   text-align: right;
+}
+
+/* Column Extract Results */
+.column-results-container {
+  margin-top: 15px;
+  overflow-x: auto;
+}
+
+.column-results-container table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.column-results-container th {
+  background: var(--bg);
+  padding: 10px;
+  border: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.column-results-container td {
+  padding: 0;
+  border: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.column-results-container textarea {
+  width: 100%;
+  height: 200px;
+  border: none;
+  padding: 8px;
+  font-family: monospace;
+  font-size: 0.85rem;
+  resize: vertical;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.column-results-container .col-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.column-results-container .btn-copy-col {
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.column-results-container .btn-copy-col:hover {
+  background: var(--accent-hover);
 }
 
 .option-row label {
@@ -760,27 +835,93 @@ footer {
   <!-- Count Tool -->
   <div class="tool-panel" id="panel-count">
     <div class="tool-options">
-      <div class="tool-options-title">文字カウントオプション</div>
+      <div class="tool-options-title">文字カウント</div>
       
       <div class="option-section">
         <div class="count-table">
           <table>
+            <tbody>
+              <tr>
+                <td>文字数</td>
+                <td id="count-chars"><strong>0</strong> 文字</td>
+                <td>改行除く</td>
+                <td id="count-chars-no-newline"><strong>0</strong> 文字</td>
+                <td>改行・空白除く</td>
+                <td id="count-chars-no-space"><strong>0</strong> 文字</td>
+              </tr>
+              <tr>
+                <td>行数</td>
+                <td id="count-lines"><strong>0</strong> 行</td>
+                <td>原稿用紙</td>
+                <td id="count-genko"><strong>0</strong> 枚</td>
+                <td>異体字</td>
+                <td id="count-variant"><strong>0</strong> 文字</td>
+              </tr>
+              <tr>
+                <td>UTF-8</td>
+                <td id="count-utf8"><strong>0</strong> バイト</td>
+                <td>UTF-16</td>
+                <td id="count-utf16"><strong>0</strong> バイト</td>
+                <td>Shift-JIS</td>
+                <td id="count-sjis"><strong>0</strong> バイト</td>
+              </tr>
+              <tr>
+                <td>EUC-JP</td>
+                <td id="count-eucjp"><strong>0</strong> バイト</td>
+                <td>JIS</td>
+                <td id="count-jis"><strong>0</strong> バイト</td>
+                <td></td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="option-section">
+        <div class="option-section-title">■ 文字種別カウント</div>
+        <div class="count-table">
+          <table>
             <thead>
               <tr>
-                <th></th>
-                <th>文字数</th>
-                <th>単語数</th>
-                <th>文数</th>
-                <th>行数</th>
+                <th>ひらがな</th>
+                <th>カタカナ</th>
+                <th>漢字</th>
+                <th>英字</th>
+                <th>数字</th>
+                <th>記号</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>合計:</td>
-                <td id="count-chars">0</td>
+                <td id="count-hiragana">0</td>
+                <td id="count-katakana">0</td>
+                <td id="count-kanji">0</td>
+                <td id="count-alpha">0</td>
+                <td id="count-digit">0</td>
+                <td id="count-symbol">0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="option-section">
+        <div class="option-section-title">■ 詳細カウント</div>
+        <div class="count-table">
+          <table>
+            <thead>
+              <tr>
+                <th>単語数</th>
+                <th>文数</th>
+                <th>段落数</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
                 <td id="count-words">0</td>
                 <td id="count-sentences">0</td>
-                <td id="count-lines">0</td>
+                <td id="count-paragraphs">0</td>
               </tr>
             </tbody>
           </table>
@@ -799,6 +940,9 @@ footer {
           <label>
             <input type="checkbox" id="count-linebreak-space"> 改行をスペースとしてカウント
           </label>
+          <label>
+            <input type="checkbox" id="count-realtime" checked> リアルタイム更新
+          </label>
         </div>
       </div>
 
@@ -816,7 +960,8 @@ footer {
       <div class="option-section">
         <div class="option-section-title">■ 単語頻度分析</div>
         <div class="option-row">
-          <button class="btn-secondary btn-small" onclick="showWordFrequency()">単語頻度を分析</button>
+          <button class="btn-primary btn-small" onclick="showWordFrequency()">単語頻度を分析</button>
+          <button class="btn-secondary btn-small" onclick="showCharFrequency()">文字頻度を分析</button>
         </div>
         <div id="word-frequency-result" style="max-height:200px; overflow-y:auto; margin-top:10px; display:none;">
         </div>
@@ -832,34 +977,44 @@ footer {
       <div class="option-section">
         <div class="option-row">
           <label>列の区切り文字:</label>
-          <select id="column-delimiter">
-            <option value="comma">カンマ (,)</option>
-            <option value="tab">タブ</option>
-            <option value="semicolon">セミコロン (;)</option>
-            <option value="space">スペース</option>
-            <option value="pipe">パイプ (|)</option>
-            <option value="custom">カスタム</option>
-          </select>
-          <input type="text" id="column-custom-delimiter" placeholder="区切り文字" style="display:none; max-width:100px;">
+          <input type="text" id="column-delimiter-text" value="," style="max-width:100px;">
+          <label>抽出する列数:</label>
+          <input type="number" id="column-count" value="4" min="1" max="20" style="max-width:80px;">
         </div>
         <div class="option-row">
-          <label>抽出する列番号:</label>
-          <input type="text" id="column-numbers" value="1" placeholder="例: 1 または 1,3,5" style="max-width:150px;">
-          <span style="font-size:0.75rem; color:var(--text-muted);">（カンマ区切りで複数指定可）</span>
+          <label>行の区切り文字:</label>
+          <input type="text" id="column-row-delimiter" value="\n" style="max-width:100px;">
         </div>
         <div class="option-row">
           <label>
-            <input type="checkbox" id="column-remove-empty" checked> 空行を削除
+            <input type="checkbox" id="column-remove-col-delim"> 列の区切り文字を出力から削除
+          </label>
+          <label>
+            <input type="checkbox" id="column-remove-row-delim"> 行の区切り文字を出力から削除
+          </label>
+        </div>
+        <div class="option-row">
+          <label>
+            <input type="checkbox" id="column-has-title"> 1列目にタイトルがある（区切り文字:
+          </label>
+          <input type="text" id="column-title-delimiter" value=":" style="max-width:60px;">
+          <span>）</span>
+        </div>
+        <div class="option-row">
+          <label>
+            <input type="checkbox" id="column-remove-empty"> 空行を削除
           </label>
           <label>
             <input type="checkbox" id="column-trim"> 各値の前後の空白を削除
           </label>
         </div>
         <div class="option-row">
-          <label>出力の区切り文字:</label>
-          <input type="text" id="column-output-delimiter" value="," placeholder="例: , または タブ" style="max-width:100px;">
-          <span style="font-size:0.75rem; color:var(--text-muted);">（複数列抽出時）</span>
+          <button class="btn-primary btn-small" onclick="executeColumnExtractMulti()">列を抽出</button>
         </div>
+      </div>
+      
+      <div id="column-results" class="column-results-container" style="display:none;">
+        <!-- 動的に列が追加される -->
       </div>
     </div>
   </div>
@@ -1075,13 +1230,25 @@ footer {
       <div class="option-section">
         <div class="option-section-title">■ ソート</div>
         <div class="option-row">
-          <label>
-            <input type="checkbox" id="sort-numeric"> 数値としてソート
-          </label>
+          <label>区切り文字:</label>
+          <input type="text" id="sort-delimiter" value="" placeholder="空欄=行全体" style="max-width:80px;">
+          <label>列番号:</label>
+          <input type="number" id="sort-column" value="1" min="1" style="max-width:60px;">
+          <span style="font-size:0.7rem; color:var(--text-muted);">※区切り文字を指定した場合のみ有効</span>
         </div>
         <div class="option-row">
-          <button class="btn-primary btn-small" onclick="executeLineOps('sortAsc')">昇順ソート</button>
-          <button class="btn-primary btn-small" onclick="executeLineOps('sortDesc')">降順ソート</button>
+          <button class="btn-primary btn-small" onclick="executeLineOps('sortAlpha')">アルファベット順</button>
+          <button class="btn-secondary btn-small" onclick="executeLineOps('sortAlphaCase')">Aa区別</button>
+          <button class="btn-primary btn-small" onclick="executeLineOps('sortNatural')">自然順</button>
+          <button class="btn-secondary btn-small" onclick="executeLineOps('sortNaturalCase')">Aa区別</button>
+          <button class="btn-primary btn-small" onclick="executeLineOps('sortLength')">文字数順</button>
+        </div>
+        <div class="option-row">
+          <button class="btn-primary btn-small" onclick="executeLineOps('sortRandom')">ランダム</button>
+          <button class="btn-primary btn-small" onclick="executeLineOps('sortReverse')">逆順</button>
+          <label style="margin-left:15px;">
+            <input type="checkbox" id="sort-desc"> 降順（Z→A）
+          </label>
         </div>
       </div>
 
@@ -1127,6 +1294,50 @@ footer {
         </div>
         <div class="option-row">
           <button class="btn-primary btn-small" onclick="executeLineOps('removeEmpty')">空行を削除</button>
+        </div>
+      </div>
+
+      <div class="option-section">
+        <div class="option-section-title">■ 指定文字列で行をフィルタ</div>
+        <div class="option-row">
+          <label>検索文字列:</label>
+          <input type="text" id="filter-text" placeholder="検索する文字列" style="flex:1; max-width:300px;">
+        </div>
+        <div class="option-row">
+          <label>
+            <input type="checkbox" id="filter-case"> 大文字小文字を区別
+          </label>
+          <label>
+            <input type="checkbox" id="filter-regex"> 正規表現を使用
+          </label>
+          <label>
+            <input type="checkbox" id="filter-show-removed"> 削除された行を表示
+          </label>
+        </div>
+        <div class="option-row">
+          <button class="btn-primary btn-small" onclick="executeLineOps('filterContaining')">含む行を削除</button>
+          <button class="btn-primary btn-small" onclick="executeLineOps('filterNotContaining')">含まない行を削除</button>
+        </div>
+        <div id="filter-removed-count" style="font-size:0.8rem; color:var(--accent); margin-top:5px;"></div>
+      </div>
+
+      <div class="option-section">
+        <div class="option-section-title">■ 繰り返し生成</div>
+        <div class="option-row">
+          <label>繰り返し回数:</label>
+          <input type="number" id="repeat-count" value="10" min="1" max="10000" style="max-width:80px;">
+          <label>1行あたりの個数:</label>
+          <input type="number" id="repeat-per-row" value="1" min="1" max="1000" style="max-width:80px;">
+        </div>
+        <div class="option-row">
+          <label>区切り文字:</label>
+          <input type="text" id="repeat-separator" value="" placeholder="空欄で直接連結" style="max-width:100px;">
+          <label>
+            <input type="checkbox" id="repeat-each-line"> 各行を個別に繰り返す
+          </label>
+        </div>
+        <div class="option-row">
+          <button class="btn-primary btn-small" onclick="executeLineOps('repeat')">繰り返し生成</button>
         </div>
       </div>
     </div>
@@ -1247,8 +1458,9 @@ document.querySelectorAll('.tool-tab').forEach(tab => {
     currentTool = tab.dataset.tool;
     document.getElementById(`panel-${currentTool}`).classList.add('active');
     
-    // 入力パネル、入出力入替ボタン、実行ボタンの表示制御
+    // 入力パネル、出力パネル、入出力入替ボタン、実行ボタンの表示制御
     const inputPanel = document.getElementById('inputPanel');
+    const outputPanel = document.querySelector('.output-panel');
     const mainContent = document.querySelector('.main-content');
     const swapButton = document.getElementById('swapButton');
     const executeButton = document.getElementById('executeButton');
@@ -1256,13 +1468,24 @@ document.querySelectorAll('.tool-tab').forEach(tab => {
     // 組み合わせ生成: 入力パネル非表示、出力全幅、入出力入替非表示
     if (currentTool === 'combination') {
       inputPanel.style.display = 'none';
+      outputPanel.style.display = 'block';
       mainContent.classList.add('full-width');
       swapButton.style.display = 'none';
       executeButton.style.display = 'inline-block';
     } 
+    // 列抽出: 出力パネル非表示（専用の結果エリアを使用）
+    else if (currentTool === 'column-extract') {
+      inputPanel.style.display = 'block';
+      outputPanel.style.display = 'none';
+      mainContent.classList.remove('full-width');
+      swapButton.style.display = 'none';
+      executeButton.style.display = 'none';
+      document.getElementById('column-results').style.display = 'none';
+    }
     // 改行追加/削除、文字変換、行操作: 各セクションにボタンがあるので実行ボタン非表示
     else if (currentTool === 'line-breaks' || currentTool === 'convert' || currentTool === 'line-ops') {
       inputPanel.style.display = 'block';
+      outputPanel.style.display = 'block';
       mainContent.classList.remove('full-width');
       swapButton.style.display = 'inline-block';
       executeButton.style.display = 'none';
@@ -1270,17 +1493,12 @@ document.querySelectorAll('.tool-tab').forEach(tab => {
     // その他: 通常表示
     else {
       inputPanel.style.display = 'block';
+      outputPanel.style.display = 'block';
       mainContent.classList.remove('full-width');
       swapButton.style.display = 'inline-block';
       executeButton.style.display = 'inline-block';
     }
   });
-});
-
-// Column delimiter change
-document.getElementById('column-delimiter').addEventListener('change', function() {
-  document.getElementById('column-custom-delimiter').style.display = 
-    this.value === 'custom' ? 'inline-block' : 'none';
 });
 
 // Update stats
@@ -1494,10 +1712,9 @@ function executeCount(input) {
   }
   
   // 文字数計算
-  let charCount = text.replace(/\n/g, '').length;  // 改行を除く
-  if (noSpaces) {
-    charCount = text.replace(/[\s　]/g, '').length;  // 空白も除く
-  }
+  const charCountTotal = text.length;
+  const charCountNoNewline = text.replace(/\n/g, '').length;
+  const charCountNoSpace = text.replace(/[\s　]/g, '').length;
   
   // 単語数（英単語と日本語を考慮）
   const wordCount = text.trim() ? text.trim().split(/\s+/).filter(w => w).length : 0;
@@ -1506,29 +1723,121 @@ function executeCount(input) {
   const sentences = text.split(/[.!?。！？]+/).filter(s => s.trim());
   const sentenceCount = sentences.length;
   
+  // 段落数（空行で区切られたブロック）
+  const paragraphs = input.split(/\n\s*\n/).filter(p => p.trim());
+  const paragraphCount = paragraphs.length || (input.trim() ? 1 : 0);
+  
   // 行数
   const lineCount = input.split('\n').length;
   
+  // 原稿用紙（400字詰め）
+  const genkoCount = Math.ceil(charCountNoSpace / 400);
+  
+  // 文字種別カウント
+  const hiraganaCount = (text.match(/[\u3041-\u3096]/g) || []).length;
+  const katakanaCount = (text.match(/[\u30A1-\u30F6\uFF66-\uFF9F]/g) || []).length;
+  const kanjiCount = (text.match(/[\u4E00-\u9FFF\u3400-\u4DBF]/g) || []).length;
+  const alphaCount = (text.match(/[A-Za-zＡ-Ｚａ-ｚ]/g) || []).length;
+  const digitCount = (text.match(/[0-9０-９]/g) || []).length;
+  const symbolCount = charCountNoSpace - hiraganaCount - katakanaCount - kanjiCount - alphaCount - digitCount;
+  
+  // 異体字（IVS: 異体字セレクタを含む文字）
+  const variantCount = (input.match(/[\uDB40-\uDBFF][\uDD00-\uDDEF]/g) || []).length;
+  
+  // バイト数計算
+  const utf8Bytes = new Blob([input]).size;
+  const utf16Bytes = input.length * 2 + 2; // BOM含む概算
+  
+  // Shift-JIS概算（日本語3バイト→2バイト、ASCII1バイト）
+  let sjisBytes = 0;
+  for (const char of input) {
+    const code = char.charCodeAt(0);
+    if (code <= 0x7F) {
+      sjisBytes += 1; // ASCII
+    } else if (code >= 0xFF61 && code <= 0xFF9F) {
+      sjisBytes += 1; // 半角カナ
+    } else {
+      sjisBytes += 2; // その他の日本語
+    }
+  }
+  
+  // EUC-JP概算
+  let eucjpBytes = 0;
+  for (const char of input) {
+    const code = char.charCodeAt(0);
+    if (code <= 0x7F) {
+      eucjpBytes += 1;
+    } else if (code >= 0xFF61 && code <= 0xFF9F) {
+      eucjpBytes += 2; // 半角カナは2バイト
+    } else {
+      eucjpBytes += 2;
+    }
+  }
+  
+  // JIS概算（ISO-2022-JP）
+  let jisBytes = eucjpBytes + Math.ceil(input.length / 10) * 3; // エスケープシーケンス概算
+  
   // テーブルを更新
-  document.getElementById('count-chars').textContent = charCount.toLocaleString();
+  document.getElementById('count-chars').innerHTML = `<strong>${charCountTotal.toLocaleString()}</strong> 文字`;
+  document.getElementById('count-chars-no-newline').innerHTML = `<strong>${charCountNoNewline.toLocaleString()}</strong> 文字`;
+  document.getElementById('count-chars-no-space').innerHTML = `<strong>${charCountNoSpace.toLocaleString()}</strong> 文字`;
+  document.getElementById('count-lines').innerHTML = `<strong>${lineCount.toLocaleString()}</strong> 行`;
+  document.getElementById('count-genko').innerHTML = `<strong>${genkoCount.toLocaleString()}</strong> 枚`;
+  document.getElementById('count-variant').innerHTML = `<strong>${variantCount.toLocaleString()}</strong> 文字`;
+  
+  document.getElementById('count-utf8').innerHTML = `<strong>${utf8Bytes.toLocaleString()}</strong> バイト`;
+  document.getElementById('count-utf16').innerHTML = `<strong>${utf16Bytes.toLocaleString()}</strong> バイト`;
+  document.getElementById('count-sjis').innerHTML = `<strong>${sjisBytes.toLocaleString()}</strong> バイト`;
+  document.getElementById('count-eucjp').innerHTML = `<strong>${eucjpBytes.toLocaleString()}</strong> バイト`;
+  document.getElementById('count-jis').innerHTML = `<strong>${jisBytes.toLocaleString()}</strong> バイト`;
+  
+  // 文字種別
+  document.getElementById('count-hiragana').textContent = hiraganaCount.toLocaleString();
+  document.getElementById('count-katakana').textContent = katakanaCount.toLocaleString();
+  document.getElementById('count-kanji').textContent = kanjiCount.toLocaleString();
+  document.getElementById('count-alpha').textContent = alphaCount.toLocaleString();
+  document.getElementById('count-digit').textContent = digitCount.toLocaleString();
+  document.getElementById('count-symbol').textContent = Math.max(0, symbolCount).toLocaleString();
+  
+  // 詳細
   document.getElementById('count-words').textContent = wordCount.toLocaleString();
   document.getElementById('count-sentences').textContent = sentenceCount.toLocaleString();
-  document.getElementById('count-lines').textContent = lineCount.toLocaleString();
+  document.getElementById('count-paragraphs').textContent = paragraphCount.toLocaleString();
   
   // カスタムカウント
   updateCustomCount(input);
   
   // 出力テキスト
   let output = `=== 文字カウント結果 ===\n`;
-  output += `文字数: ${charCount.toLocaleString()}`;
-  if (noSpaces) output += `（空白除く）`;
-  if (noHtml) output += `（HTMLタグ除く）`;
-  output += `\n`;
-  output += `単語数: ${wordCount.toLocaleString()}\n`;
-  output += `文数: ${sentenceCount.toLocaleString()}\n`;
+  output += `文字数: ${charCountTotal.toLocaleString()}\n`;
+  output += `改行除く: ${charCountNoNewline.toLocaleString()}\n`;
+  output += `改行・空白除く: ${charCountNoSpace.toLocaleString()}\n`;
   output += `行数: ${lineCount.toLocaleString()}\n`;
+  output += `原稿用紙: ${genkoCount.toLocaleString()} 枚\n`;
+  output += `\n=== バイト数 ===\n`;
+  output += `UTF-8: ${utf8Bytes.toLocaleString()} バイト\n`;
+  output += `UTF-16: ${utf16Bytes.toLocaleString()} バイト\n`;
+  output += `Shift-JIS: ${sjisBytes.toLocaleString()} バイト\n`;
+  output += `EUC-JP: ${eucjpBytes.toLocaleString()} バイト\n`;
+  output += `JIS: ${jisBytes.toLocaleString()} バイト\n`;
+  output += `\n=== 文字種別 ===\n`;
+  output += `ひらがな: ${hiraganaCount.toLocaleString()}\n`;
+  output += `カタカナ: ${katakanaCount.toLocaleString()}\n`;
+  output += `漢字: ${kanjiCount.toLocaleString()}\n`;
+  output += `英字: ${alphaCount.toLocaleString()}\n`;
+  output += `数字: ${digitCount.toLocaleString()}\n`;
+  output += `記号等: ${Math.max(0, symbolCount).toLocaleString()}\n`;
   
   return output;
+}
+
+// リアルタイムカウント更新
+function updateRealtimeCount() {
+  const realtime = document.getElementById('count-realtime');
+  if (realtime && realtime.checked && currentTool === 'count') {
+    const input = document.getElementById('inputText').value;
+    executeCount(input);
+  }
 }
 
 function updateCustomCount(input) {
@@ -1585,6 +1894,43 @@ function showWordFrequency() {
   resultDiv.style.display = 'block';
 }
 
+// 文字頻度分析
+function showCharFrequency() {
+  const input = document.getElementById('inputText').value;
+  const resultDiv = document.getElementById('word-frequency-result');
+  
+  if (!input.trim()) {
+    resultDiv.style.display = 'none';
+    return;
+  }
+  
+  // 文字をカウント（空白・改行除く）
+  const chars = input.replace(/[\s\n]/g, '').split('');
+  const freq = {};
+  chars.forEach(c => freq[c] = (freq[c] || 0) + 1);
+  
+  const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+  const total = chars.length;
+  
+  let html = `<table class="word-freq-table">
+    <thead>
+      <tr><th>文字</th><th>回数</th><th>頻度</th></tr>
+    </thead>
+    <tbody>`;
+  
+  sorted.slice(0, 50).forEach(([char, count]) => {
+    const percent = ((count / total) * 100).toFixed(1);
+    const displayChar = char === ' ' ? '(空白)' : char;
+    html += `<tr><td>${displayChar}</td><td>${count}</td><td>${percent}%</td></tr>`;
+  });
+  
+  html += `</tbody></table>`;
+  html += `<p style="font-size:0.75rem; color:var(--text-muted); margin-top:8px;">総文字数: ${total} / ユニーク: ${sorted.length}</p>`;
+  
+  resultDiv.innerHTML = html;
+  resultDiv.style.display = 'block';
+}
+
 // カスタムカウントのリアルタイム更新
 document.addEventListener('DOMContentLoaded', function() {
   const customQueryInput = document.getElementById('count-custom-query');
@@ -1603,52 +1949,121 @@ document.addEventListener('DOMContentLoaded', function() {
       updateCustomCount(input);
     });
   }
+  
+  // 入力テキストのリアルタイム更新
+  const inputText = document.getElementById('inputText');
+  if (inputText) {
+    inputText.addEventListener('input', () => {
+      updateRealtimeCount();
+    });
+  }
 });
 
 function executeColumnExtract(input) {
-  let delimiter;
-  const delimiterType = document.getElementById('column-delimiter').value;
+  // 旧バージョン互換用（テストで使用）
+  return executeColumnExtractMulti();
+}
+
+function executeColumnExtractMulti() {
+  const input = document.getElementById('inputText').value;
+  let colDelimiter = document.getElementById('column-delimiter-text').value;
   
-  switch(delimiterType) {
-    case 'tab': delimiter = '\t'; break;
-    case 'comma': delimiter = ','; break;
-    case 'semicolon': delimiter = ';'; break;
-    case 'space': delimiter = /\s+/; break;
-    case 'pipe': delimiter = '|'; break;
-    case 'custom': delimiter = document.getElementById('column-custom-delimiter').value || ','; break;
-  }
+  // エスケープシーケンス対応
+  colDelimiter = colDelimiter.replace(/\\t/g, '\t').replace(/\\n/g, '\n');
   
-  // 列番号をパース（カンマ区切りで複数対応）
-  const colNumsStr = document.getElementById('column-numbers').value;
-  const colNums = colNumsStr.split(',')
-    .map(s => parseInt(s.trim()) - 1)
-    .filter(n => !isNaN(n) && n >= 0);
+  const colCount = parseInt(document.getElementById('column-count').value) || 4;
+  let rowDelimiter = document.getElementById('column-row-delimiter').value;
+  rowDelimiter = rowDelimiter.replace(/\\t/g, '\t').replace(/\\n/g, '\n');
   
-  if (colNums.length === 0) {
-    return '列番号を正しく指定してください';
-  }
-  
+  const removeColDelim = document.getElementById('column-remove-col-delim').checked;
+  const removeRowDelim = document.getElementById('column-remove-row-delim').checked;
+  const hasTitle = document.getElementById('column-has-title').checked;
+  let titleDelimiter = document.getElementById('column-title-delimiter').value;
+  titleDelimiter = titleDelimiter.replace(/\\t/g, '\t').replace(/\\n/g, '\n');
   const removeEmpty = document.getElementById('column-remove-empty').checked;
   const trimValues = document.getElementById('column-trim').checked;
-  const outputDelimiter = document.getElementById('column-output-delimiter').value;
   
-  const lines = input.split('\n');
-  const results = [];
+  // 行で分割
+  const rows = rowDelimiter === '\n' ? input.split('\n') : input.split(rowDelimiter);
   
-  for (const line of lines) {
-    if (removeEmpty && line.trim() === '') continue;
+  // 各列のデータを格納
+  const columns = Array.from({ length: colCount }, () => []);
+  
+  for (const row of rows) {
+    if (removeEmpty && row.trim() === '') continue;
     
-    const parts = typeof delimiter === 'string' ? line.split(delimiter) : line.split(delimiter);
-    const extracted = colNums.map(colNum => {
-      let val = parts[colNum] !== undefined ? parts[colNum] : '';
+    let processedRow = row;
+    
+    // タイトル列の処理
+    let title = '';
+    if (hasTitle && titleDelimiter) {
+      const titleIdx = processedRow.indexOf(titleDelimiter);
+      if (titleIdx !== -1) {
+        title = processedRow.substring(0, titleIdx);
+        processedRow = processedRow.substring(titleIdx + titleDelimiter.length);
+      }
+    }
+    
+    const parts = processedRow.split(colDelimiter);
+    
+    for (let i = 0; i < colCount; i++) {
+      let val = parts[i] !== undefined ? parts[i] : '';
+      
+      // 列区切り文字を削除
+      if (removeColDelim && colDelimiter) {
+        val = val.replace(new RegExp(escapeRegex(colDelimiter), 'g'), '');
+      }
+      
+      // 行区切り文字を削除
+      if (removeRowDelim && rowDelimiter && rowDelimiter !== '\n') {
+        val = val.replace(new RegExp(escapeRegex(rowDelimiter), 'g'), '');
+      }
+      
       if (trimValues) val = val.trim();
-      return val;
-    });
-    
-    results.push(extracted.join(outputDelimiter));
+      
+      // タイトルを最初の列に追加
+      if (hasTitle && i === 0 && title) {
+        val = title + titleDelimiter + val;
+      }
+      
+      columns[i].push(val);
+    }
   }
   
-  return results.join('\n');
+  // 結果テーブルを生成
+  const resultsDiv = document.getElementById('column-results');
+  
+  let html = '<table><tr>';
+  for (let i = 0; i < colCount; i++) {
+    html += `<th><div class="col-header"><span>Column #${i + 1}</span><button class="btn-copy-col" onclick="copyColumn(${i})">コピー</button></div></th>`;
+  }
+  html += '</tr><tr>';
+  for (let i = 0; i < colCount; i++) {
+    html += `<td><textarea id="col-output-${i}" readonly>${columns[i].join('\n')}</textarea></td>`;
+  }
+  html += '</tr></table>';
+  
+  resultsDiv.innerHTML = html;
+  resultsDiv.style.display = 'block';
+  
+  return columns[0].join('\n');
+}
+
+// 正規表現エスケープ用ヘルパー
+function escapeRegex(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function copyColumn(colIndex) {
+  const textarea = document.getElementById(`col-output-${colIndex}`);
+  if (textarea) {
+    navigator.clipboard.writeText(textarea.value).then(() => {
+      const btn = event.target;
+      const originalText = btn.textContent;
+      btn.textContent = 'コピー完了!';
+      setTimeout(() => btn.textContent = originalText, 1000);
+    });
+  }
 }
 
 function executeFindReplace(input) {
@@ -2091,32 +2506,102 @@ function executeLineOps(mode) {
     case 'trimRight':
       output = lines.map(line => line.replace(/[\s　]+$/, '')).join('\n');
       break;
-    case 'sortAsc': {
-      const numeric = document.getElementById('sort-numeric').checked;
-      if (numeric) {
-        output = lines.sort((a, b) => {
-          const numA = parseFloat(a) || 0;
-          const numB = parseFloat(b) || 0;
-          return numA - numB;
-        }).join('\n');
-      } else {
-        output = lines.sort((a, b) => a.localeCompare(b, 'ja')).join('\n');
-      }
-      break;
-    }
+    
+    // ソート機能
+    case 'sortAlpha':
+    case 'sortAlphaCase':
+    case 'sortNatural':
+    case 'sortNaturalCase':
+    case 'sortLength':
+    case 'sortRandom':
+    case 'sortReverse':
+    case 'sortAsc':
     case 'sortDesc': {
-      const numeric = document.getElementById('sort-numeric').checked;
-      if (numeric) {
-        output = lines.sort((a, b) => {
-          const numA = parseFloat(a) || 0;
-          const numB = parseFloat(b) || 0;
-          return numB - numA;
-        }).join('\n');
-      } else {
-        output = lines.sort((a, b) => b.localeCompare(a, 'ja')).join('\n');
+      const delimiter = document.getElementById('sort-delimiter').value;
+      const colNum = parseInt(document.getElementById('sort-column').value) - 1 || 0;
+      const desc = document.getElementById('sort-desc').checked;
+      
+      // ソート用のキーを取得する関数
+      const getKey = (line) => {
+        if (delimiter) {
+          const parts = line.split(delimiter);
+          return parts[colNum] !== undefined ? parts[colNum] : line;
+        }
+        return line;
+      };
+      
+      let sortFn;
+      
+      switch (mode) {
+        case 'sortAlpha':
+        case 'sortAsc':
+          // アルファベット順（大文字小文字区別なし）
+          sortFn = (a, b) => getKey(a).localeCompare(getKey(b), 'ja', { sensitivity: 'base' });
+          break;
+        case 'sortAlphaCase':
+          // アルファベット順（大文字小文字区別あり）- ASCII順
+          sortFn = (a, b) => {
+            const keyA = getKey(a), keyB = getKey(b);
+            return keyA < keyB ? -1 : keyA > keyB ? 1 : 0;
+          };
+          break;
+        case 'sortNatural':
+          // 自然順ソート（大文字小文字区別なし）- 数字を数値として扱う
+          sortFn = (a, b) => getKey(a).localeCompare(getKey(b), 'ja', { numeric: true, sensitivity: 'base' });
+          break;
+        case 'sortNaturalCase':
+          // 自然順ソート（大文字小文字区別あり）- 数字を数値として扱い、ASCII順
+          sortFn = (a, b) => {
+            const keyA = getKey(a), keyB = getKey(b);
+            const re = /(\d+)|(\D+)/g;
+            const aParts = keyA.match(re) || [];
+            const bParts = keyB.match(re) || [];
+            
+            for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+              const aPart = aParts[i] || '';
+              const bPart = bParts[i] || '';
+              
+              const aNum = parseInt(aPart);
+              const bNum = parseInt(bPart);
+              
+              if (!isNaN(aNum) && !isNaN(bNum)) {
+                if (aNum !== bNum) return aNum - bNum;
+              } else {
+                if (aPart !== bPart) return aPart < bPart ? -1 : 1;
+              }
+            }
+            return 0;
+          };
+          break;
+        case 'sortLength':
+          // 文字数順
+          sortFn = (a, b) => getKey(a).length - getKey(b).length;
+          break;
+        case 'sortRandom':
+          // ランダム
+          sortFn = () => Math.random() - 0.5;
+          break;
+        case 'sortReverse':
+          // 逆順（現在の順序を反転）
+          output = lines.reverse().join('\n');
+          break;
+        case 'sortDesc':
+          // 降順（後方互換）
+          sortFn = (a, b) => getKey(b).localeCompare(getKey(a), 'ja', { numeric: true });
+          break;
+      }
+      
+      if (mode !== 'sortReverse') {
+        lines.sort(sortFn);
+        // 降順オプションがONの場合は結果を反転（ランダム以外）
+        if (desc && mode !== 'sortRandom') {
+          lines.reverse();
+        }
+        output = lines.join('\n');
       }
       break;
     }
+    
     case 'uniq':
       // 連続した重複行のみ削除（unixのuniqコマンドと同様）
       output = lines.filter((line, i) => i === 0 || line !== lines[i - 1]).join('\n');
@@ -2139,6 +2624,69 @@ function executeLineOps(mode) {
         output = lines.filter(line => line.trim() !== '').join('\n');
       } else {
         output = lines.filter(line => line !== '').join('\n');
+      }
+      break;
+    }
+    case 'filterContaining':
+    case 'filterNotContaining': {
+      // 指定文字列を含む/含まない行を削除
+      const filterText = document.getElementById('filter-text').value;
+      const caseSensitive = document.getElementById('filter-case').checked;
+      const useRegex = document.getElementById('filter-regex').checked;
+      const showRemoved = document.getElementById('filter-show-removed').checked;
+      const countDiv = document.getElementById('filter-removed-count');
+      const isContaining = (mode === 'filterContaining');
+      
+      if (!filterText) {
+        output = input;
+        countDiv.textContent = '検索文字列を入力してください';
+        break;
+      }
+      
+      let matcher;
+      try {
+        if (useRegex) {
+          const flags = caseSensitive ? 'g' : 'gi';
+          matcher = new RegExp(filterText, flags);
+        } else {
+          const escaped = filterText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const flags = caseSensitive ? '' : 'i';
+          matcher = new RegExp(escaped, flags);
+        }
+      } catch (e) {
+        output = input;
+        countDiv.textContent = '正規表現エラー: ' + e.message;
+        break;
+      }
+      
+      const kept = [];
+      const removed = [];
+      
+      for (const line of lines) {
+        const matches = matcher.test(line);
+        // Reset lastIndex for global regex
+        matcher.lastIndex = 0;
+        
+        // filterContaining: 含む行を削除 → マッチしたら削除
+        // filterNotContaining: 含まない行を削除 → マッチしなかったら削除
+        const shouldRemove = isContaining ? matches : !matches;
+        
+        if (shouldRemove) {
+          removed.push(line);
+        } else {
+          kept.push(line);
+        }
+      }
+      
+      output = kept.join('\n');
+      
+      // 削除された行数を表示
+      const modeText = isContaining ? '含む' : '含まない';
+      countDiv.textContent = `${removed.length} 行を削除しました（"${filterText}" を${modeText}行）`;
+      
+      // 削除された行を表示する場合
+      if (showRemoved && removed.length > 0) {
+        output += '\n\n--- 削除された行 (' + removed.length + '行) ---\n' + removed.join('\n');
       }
       break;
     }
@@ -2165,6 +2713,49 @@ function executeLineOps(mode) {
       }
       
       output = result.join('\n');
+      break;
+    }
+    case 'repeat': {
+      // 繰り返し生成
+      const repeatCount = parseInt(document.getElementById('repeat-count').value) || 10;
+      const perRow = parseInt(document.getElementById('repeat-per-row').value) || 1;
+      const separator = document.getElementById('repeat-separator').value;
+      const eachLine = document.getElementById('repeat-each-line').checked;
+      
+      if (eachLine) {
+        // 各行を個別に繰り返す
+        const resultLines = [];
+        for (const line of lines) {
+          if (line.trim() === '') {
+            resultLines.push(line);
+            continue;
+          }
+          const repeated = [];
+          for (let i = 0; i < repeatCount; i++) {
+            repeated.push(line);
+          }
+          // perRowごとに行を分割
+          const chunks = [];
+          for (let i = 0; i < repeated.length; i += perRow) {
+            chunks.push(repeated.slice(i, i + perRow).join(separator));
+          }
+          resultLines.push(chunks.join('\n'));
+        }
+        output = resultLines.join('\n');
+      } else {
+        // 入力全体を1つのテキストとして繰り返す
+        const text = input;
+        const repeated = [];
+        for (let i = 0; i < repeatCount; i++) {
+          repeated.push(text);
+        }
+        // perRowごとに行を分割
+        const chunks = [];
+        for (let i = 0; i < repeated.length; i += perRow) {
+          chunks.push(repeated.slice(i, i + perRow).join(separator));
+        }
+        output = chunks.join('\n');
+      }
       break;
     }
   }
@@ -2231,6 +2822,174 @@ document.addEventListener('keydown', (e) => {
 // Initial stats
 updateStats('inputText', 'input');
 updateStats('outputText', 'output');
+
+// ============================================
+// ファイル読み込み機能（SJIS/EUC-JP/UTF-8自動判別）
+// ============================================
+
+const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB
+const WARN_FILE_SIZE = 500 * 1024; // 500KB
+
+const DEFAULT_EXTENSIONS = [
+  '.txt', '.md', '.html', '.htm', '.xht', '.xhtml', 
+  '.css', '.js', '.json', '.xml', '.csv', '.tsv',
+  '.java', '.properties', '.gradle', '.kt', '.scala', '.groovy', 
+  '.yml', '.yaml', '.pom', '.log', '.ini', '.conf'
+];
+
+function getAllowedExtensions() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const extraExts = urlParams.get('ext');
+  const allowed = [...DEFAULT_EXTENSIONS];
+  if (extraExts) {
+    extraExts.split(',').forEach(ext => {
+      const e = ext.startsWith('.') ? ext : '.' + ext;
+      if (!allowed.includes(e.toLowerCase())) {
+        allowed.push(e.toLowerCase());
+      }
+    });
+  }
+  return allowed;
+}
+
+function getFileExtension(filename) {
+  const lastDot = filename.lastIndexOf('.');
+  return lastDot >= 0 ? filename.slice(lastDot).toLowerCase() : '';
+}
+
+function checkFileType(file) {
+  const ext = getFileExtension(file.name);
+  const allowed = getAllowedExtensions();
+  
+  if (!ext) {
+    return confirm('拡張子のないファイルです。テキストファイルとして読み込みますか？');
+  }
+  
+  if (!allowed.includes(ext)) {
+    const proceed = confirm(
+      `未対応の形式です（${ext}）。\n\nテキストファイルとして読み込みますか？\n\n` +
+      `OKを押すと、このURLでは次回から確認なしで読み込めます。`
+    );
+    if (proceed) {
+      addExtensionToUrl(ext);
+    }
+    return proceed;
+  }
+  return true;
+}
+
+function addExtensionToUrl(ext) {
+  const url = new URL(window.location);
+  const currentExts = url.searchParams.get('ext');
+  const extWithoutDot = ext.startsWith('.') ? ext.slice(1) : ext;
+  
+  if (currentExts) {
+    const extList = currentExts.split(',');
+    if (!extList.includes(extWithoutDot)) {
+      extList.push(extWithoutDot);
+      url.searchParams.set('ext', extList.join(','));
+    }
+  } else {
+    url.searchParams.set('ext', extWithoutDot);
+  }
+  window.history.replaceState({}, '', url);
+}
+
+function checkFileSize(file) {
+  if (file.size > MAX_FILE_SIZE) {
+    alert(`ファイルが大きすぎます（${formatFileSize(file.size)}）。\n1MB以下のファイルを選択してください。`);
+    return false;
+  }
+  if (file.size > WARN_FILE_SIZE) {
+    return confirm(`ファイルサイズが大きいです（${formatFileSize(file.size)}）。\n処理に時間がかかる場合があります。続行しますか？`);
+  }
+  return true;
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// ファイルを読み込んでテキストエリアにセット（SJIS/EUC-JP/UTF-8自動判別）
+function readFile(file, textareaId) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const arrayBuffer = e.target.result;
+    const uint8Array = new Uint8Array(arrayBuffer);
+    
+    // エンコーディングを自動検出
+    const detectedEncoding = Encoding.detect(uint8Array);
+    
+    // Unicode配列に変換
+    const unicodeArray = Encoding.convert(uint8Array, {
+      to: 'UNICODE',
+      from: detectedEncoding
+    });
+    
+    // 文字列に変換
+    const text = Encoding.codeToString(unicodeArray);
+    document.getElementById(textareaId).value = text;
+    updateStats(textareaId, textareaId === 'inputText' ? 'input' : 'output');
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ドラッグ&ドロップのセットアップ
+function setupDragDrop(panelId, textareaId) {
+  const panel = document.getElementById(panelId);
+  const textarea = document.getElementById(textareaId);
+  
+  if (!panel || !textarea) return;
+  
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    panel.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  });
+  
+  ['dragenter', 'dragover'].forEach(eventName => {
+    panel.addEventListener(eventName, () => {
+      panel.classList.add('drag-over');
+    });
+  });
+  
+  ['dragleave', 'drop'].forEach(eventName => {
+    panel.addEventListener(eventName, () => {
+      panel.classList.remove('drag-over');
+    });
+  });
+  
+  panel.addEventListener('drop', (e) => {
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      const file = files[0];
+      if (checkFileSize(file) && checkFileType(file)) {
+        readFile(file, textareaId);
+      }
+    }
+  });
+  
+  // ファイルペースト対応
+  textarea.addEventListener('paste', (e) => {
+    const items = e.clipboardData.items;
+    for (const item of items) {
+      if (item.kind === 'file') {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file && checkFileSize(file) && checkFileType(file)) {
+          readFile(file, textareaId);
+        }
+        return;
+      }
+    }
+  });
+}
+
+// ドラッグ&ドロップ初期化
+setupDragDrop('inputPanel', 'inputText');
 
 // ============================================
 // テスト関数 - コンソールで runAllTests() を実行
@@ -2429,43 +3188,47 @@ function runAllTests() {
   });
   
   // 4. 列抽出
-  test('列抽出 - カンマ区切り1列目', () => {
-    document.getElementById('column-delimiter').value = 'comma';
-    document.getElementById('column-numbers').value = '1';
-    document.getElementById('column-remove-empty').checked = true;
-    document.getElementById('column-trim').checked = true;
-    document.getElementById('column-output-delimiter').value = ',';
-    const result = executeColumnExtract('a,b,c\n1,2,3');
-    return result === 'a\n1';
-  });
-  
-  test('列抽出 - 複数列', () => {
-    document.getElementById('column-delimiter').value = 'comma';
-    document.getElementById('column-numbers').value = '1,3';
-    const result = executeColumnExtract('a,b,c\n1,2,3');
-    return result === 'a,c\n1,3';
+  test('列抽出 - カンマ区切り', () => {
+    document.getElementById('inputText').value = 'a,b,c\n1,2,3';
+    document.getElementById('column-delimiter-text').value = ',';
+    document.getElementById('column-count').value = '3';
+    document.getElementById('column-row-delimiter').value = '\\n';
+    document.getElementById('column-remove-empty').checked = false;
+    document.getElementById('column-trim').checked = false;
+    executeColumnExtractMulti();
+    const col1 = document.getElementById('col-output-0').value;
+    return col1 === 'a\n1';
   });
   
   test('列抽出 - タブ区切り', () => {
-    document.getElementById('column-delimiter').value = 'tab';
-    document.getElementById('column-numbers').value = '2';
-    const result = executeColumnExtract('a\tb\tc\n1\t2\t3');
-    return result === 'b\n2';
-  });
-  
-  test('列抽出 - パイプ区切り', () => {
-    document.getElementById('column-delimiter').value = 'pipe';
-    document.getElementById('column-numbers').value = '1';
-    const result = executeColumnExtract('a|b|c\n1|2|3');
-    return result === 'a\n1';
+    document.getElementById('inputText').value = 'a\tb\tc\n1\t2\t3';
+    document.getElementById('column-delimiter-text').value = '\\t';
+    document.getElementById('column-count').value = '3';
+    executeColumnExtractMulti();
+    const col2 = document.getElementById('col-output-1').value;
+    return col2 === 'b\n2';
   });
   
   test('列抽出 - トリムON', () => {
-    document.getElementById('column-delimiter').value = 'comma';
-    document.getElementById('column-numbers').value = '1';
+    document.getElementById('inputText').value = '  a  ,  b  ,c';
+    document.getElementById('column-delimiter-text').value = ',';
+    document.getElementById('column-count').value = '3';
     document.getElementById('column-trim').checked = true;
-    const result = executeColumnExtract('  a  ,b,c');
-    return result === 'a';
+    executeColumnExtractMulti();
+    const col1 = document.getElementById('col-output-0').value;
+    document.getElementById('column-trim').checked = false;
+    return col1 === 'a';
+  });
+  
+  test('列抽出 - 空行削除', () => {
+    document.getElementById('inputText').value = 'a,b\n\nc,d';
+    document.getElementById('column-delimiter-text').value = ',';
+    document.getElementById('column-count').value = '2';
+    document.getElementById('column-remove-empty').checked = true;
+    executeColumnExtractMulti();
+    const col1 = document.getElementById('col-output-0').value;
+    document.getElementById('column-remove-empty').checked = false;
+    return col1 === 'a\nc';
   });
   
   // 5. 検索と置換
@@ -2814,38 +3577,125 @@ function runAllTests() {
     return document.getElementById('outputText').value === 'hello';
   });
   
-  test('行操作 - 昇順ソート（文字列）', () => {
-    document.getElementById('sort-numeric').checked = false;
+  test('行操作 - アルファベット順ソート', () => {
+    document.getElementById('sort-delimiter').value = '';
+    document.getElementById('sort-desc').checked = false;
     document.getElementById('inputText').value = 'c\na\nb';
-    executeLineOps('sortAsc');
+    executeLineOps('sortAlpha');
     return document.getElementById('outputText').value === 'a\nb\nc';
   });
   
-  test('行操作 - 降順ソート（文字列）', () => {
-    document.getElementById('sort-numeric').checked = false;
+  test('行操作 - アルファベット順ソート（降順）', () => {
+    document.getElementById('sort-delimiter').value = '';
+    document.getElementById('sort-desc').checked = true;
     document.getElementById('inputText').value = 'a\nc\nb';
-    executeLineOps('sortDesc');
+    executeLineOps('sortAlpha');
+    document.getElementById('sort-desc').checked = false;
     return document.getElementById('outputText').value === 'c\nb\na';
   });
   
-  test('行操作 - 数値昇順ソート', () => {
-    document.getElementById('sort-numeric').checked = true;
+  test('行操作 - アルファベット順ソート（大文字小文字区別なし）', () => {
+    document.getElementById('sort-delimiter').value = '';
+    document.getElementById('sort-desc').checked = false;
+    document.getElementById('inputText').value = 'B\na\nC';
+    executeLineOps('sortAlpha');
+    const result = document.getElementById('outputText').value;
+    return result === 'a\nB\nC' || result === 'a\nC\nB'; // 大文字小文字区別なしなのでaが先頭
+  });
+  
+  test('行操作 - アルファベット順ソート（大文字小文字区別あり）', () => {
+    document.getElementById('sort-delimiter').value = '';
+    document.getElementById('sort-desc').checked = false;
+    document.getElementById('inputText').value = 'b\nA\nB\na';
+    executeLineOps('sortAlphaCase');
+    // ASCII順: A(65), B(66), a(97), b(98)
+    return document.getElementById('outputText').value === 'A\nB\na\nb';
+  });
+  
+  test('行操作 - 自然順ソート（数値対応）', () => {
+    document.getElementById('sort-delimiter').value = '';
+    document.getElementById('sort-desc').checked = false;
     document.getElementById('inputText').value = '1\n10\n2\n15\n3';
-    executeLineOps('sortAsc');
+    executeLineOps('sortNatural');
     return document.getElementById('outputText').value === '1\n2\n3\n10\n15';
   });
   
-  test('行操作 - 数値降順ソート', () => {
-    document.getElementById('sort-numeric').checked = true;
-    document.getElementById('inputText').value = '1\n10\n2\n15\n3';
-    executeLineOps('sortDesc');
-    return document.getElementById('outputText').value === '15\n10\n3\n2\n1';
+  test('行操作 - 自然順ソート（ファイル名）', () => {
+    document.getElementById('sort-delimiter').value = '';
+    document.getElementById('sort-desc').checked = false;
+    document.getElementById('inputText').value = 'file10.txt\nfile2.txt\nfile1.txt';
+    executeLineOps('sortNatural');
+    return document.getElementById('outputText').value === 'file1.txt\nfile2.txt\nfile10.txt';
+  });
+  
+  test('行操作 - 自然順ソート（大文字小文字区別あり）', () => {
+    document.getElementById('sort-delimiter').value = '';
+    document.getElementById('sort-desc').checked = false;
+    document.getElementById('inputText').value = 'B2\na1\nA10';
+    executeLineOps('sortNaturalCase');
+    // ASCII順 + 数値順: A10, B2, a1
+    return document.getElementById('outputText').value === 'A10\nB2\na1';
+  });
+  
+  test('行操作 - 文字数順ソート', () => {
+    document.getElementById('sort-delimiter').value = '';
+    document.getElementById('sort-desc').checked = false;
+    document.getElementById('inputText').value = 'aaa\na\naa';
+    executeLineOps('sortLength');
+    return document.getElementById('outputText').value === 'a\naa\naaa';
+  });
+  
+  test('行操作 - 文字数順ソート（降順）', () => {
+    document.getElementById('sort-delimiter').value = '';
+    document.getElementById('sort-desc').checked = true;
+    document.getElementById('inputText').value = 'a\naaa\naa';
+    executeLineOps('sortLength');
+    document.getElementById('sort-desc').checked = false;
+    return document.getElementById('outputText').value === 'aaa\naa\na';
+  });
+  
+  test('行操作 - 逆順', () => {
+    document.getElementById('inputText').value = 'a\nb\nc';
+    executeLineOps('sortReverse');
+    return document.getElementById('outputText').value === 'c\nb\na';
+  });
+  
+  test('行操作 - ランダムソート', () => {
+    document.getElementById('inputText').value = 'a\nb\nc\nd\ne';
+    executeLineOps('sortRandom');
+    const result = document.getElementById('outputText').value;
+    // ランダムなので、行数が同じで同じ要素を含むことを確認
+    const lines = result.split('\n').sort();
+    return lines.join('\n') === 'a\nb\nc\nd\ne';
+  });
+  
+  test('行操作 - 区切り文字指定ソート', () => {
+    document.getElementById('sort-delimiter').value = ',';
+    document.getElementById('sort-column').value = '2';
+    document.getElementById('sort-desc').checked = false;
+    document.getElementById('inputText').value = 'x,3\ny,1\nz,2';
+    executeLineOps('sortNatural');
+    document.getElementById('sort-delimiter').value = '';
+    document.getElementById('sort-column').value = '1';
+    return document.getElementById('outputText').value === 'y,1\nz,2\nx,3';
+  });
+  
+  test('行操作 - 区切り文字指定ソート（3列目）', () => {
+    document.getElementById('sort-delimiter').value = '\t';
+    document.getElementById('sort-column').value = '3';
+    document.getElementById('sort-desc').checked = false;
+    document.getElementById('inputText').value = 'a\t1\tc\nb\t2\ta\nc\t3\tb';
+    executeLineOps('sortAlpha');
+    document.getElementById('sort-delimiter').value = '';
+    document.getElementById('sort-column').value = '1';
+    return document.getElementById('outputText').value === 'b\t2\ta\nc\t3\tb\na\t1\tc';
   });
   
   test('行操作 - 日本語ソート', () => {
-    document.getElementById('sort-numeric').checked = false;
+    document.getElementById('sort-delimiter').value = '';
+    document.getElementById('sort-desc').checked = false;
     document.getElementById('inputText').value = 'か\nあ\nさ';
-    executeLineOps('sortAsc');
+    executeLineOps('sortAlpha');
     return document.getElementById('outputText').value === 'あ\nか\nさ';
   });
   
@@ -2853,6 +3703,81 @@ function runAllTests() {
     document.getElementById('inputText').value = 'a\na\nb\nb\na';
     executeLineOps('uniq');
     return document.getElementById('outputText').value === 'a\nb\na';
+  });
+  
+  // 14. 行フィルタ
+  test('行操作 - 含む行を削除', () => {
+    document.getElementById('inputText').value = 'apple\nbanana\napricot\ncherry';
+    document.getElementById('filter-text').value = 'ap';
+    document.getElementById('filter-case').checked = false;
+    document.getElementById('filter-regex').checked = false;
+    document.getElementById('filter-show-removed').checked = false;
+    executeLineOps('filterContaining');
+    return document.getElementById('outputText').value === 'banana\ncherry';
+  });
+  
+  test('行操作 - 含まない行を削除', () => {
+    document.getElementById('inputText').value = 'apple\nbanana\napricot\ncherry';
+    document.getElementById('filter-text').value = 'ap';
+    document.getElementById('filter-case').checked = false;
+    document.getElementById('filter-regex').checked = false;
+    document.getElementById('filter-show-removed').checked = false;
+    executeLineOps('filterNotContaining');
+    return document.getElementById('outputText').value === 'apple\napricot';
+  });
+  
+  test('行操作 - 含む行を削除（大文字小文字区別）', () => {
+    document.getElementById('inputText').value = 'Apple\napple\nAPPLE';
+    document.getElementById('filter-text').value = 'Apple';
+    document.getElementById('filter-case').checked = true;
+    document.getElementById('filter-regex').checked = false;
+    document.getElementById('filter-show-removed').checked = false;
+    executeLineOps('filterContaining');
+    document.getElementById('filter-case').checked = false;
+    return document.getElementById('outputText').value === 'apple\nAPPLE';
+  });
+  
+  test('行操作 - 正規表現でフィルタ', () => {
+    document.getElementById('inputText').value = 'test1\ntest2\nhello\ntest10';
+    document.getElementById('filter-text').value = '^test\\d+$';
+    document.getElementById('filter-case').checked = false;
+    document.getElementById('filter-regex').checked = true;
+    document.getElementById('filter-show-removed').checked = false;
+    executeLineOps('filterContaining');
+    document.getElementById('filter-regex').checked = false;
+    return document.getElementById('outputText').value === 'hello';
+  });
+  
+  // 15. 繰り返し生成
+  test('行操作 - 繰り返し生成（基本）', () => {
+    document.getElementById('inputText').value = 'abc';
+    document.getElementById('repeat-count').value = '3';
+    document.getElementById('repeat-per-row').value = '1';
+    document.getElementById('repeat-separator').value = '';
+    document.getElementById('repeat-each-line').checked = false;
+    executeLineOps('repeat');
+    return document.getElementById('outputText').value === 'abc\nabc\nabc';
+  });
+  
+  test('行操作 - 繰り返し生成（1行に複数）', () => {
+    document.getElementById('inputText').value = 'x';
+    document.getElementById('repeat-count').value = '6';
+    document.getElementById('repeat-per-row').value = '3';
+    document.getElementById('repeat-separator').value = ',';
+    document.getElementById('repeat-each-line').checked = false;
+    executeLineOps('repeat');
+    return document.getElementById('outputText').value === 'x,x,x\nx,x,x';
+  });
+  
+  test('行操作 - 繰り返し生成（各行個別）', () => {
+    document.getElementById('inputText').value = 'a\nb';
+    document.getElementById('repeat-count').value = '2';
+    document.getElementById('repeat-per-row').value = '1';
+    document.getElementById('repeat-separator').value = '';
+    document.getElementById('repeat-each-line').checked = true;
+    executeLineOps('repeat');
+    document.getElementById('repeat-each-line').checked = false;
+    return document.getElementById('outputText').value === 'a\na\nb\nb';
   });
   
   // 結果サマリー
