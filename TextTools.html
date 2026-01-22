@@ -1176,6 +1176,22 @@ footer {
         <div class="option-row">
           <button class="btn-primary btn-small" onclick="executeConvert('lowercase')">小文字に変換</button>
           <button class="btn-primary btn-small" onclick="executeConvert('uppercase')">大文字に変換</button>
+          <button class="btn-primary btn-small" onclick="executeConvert('randomcase')">ランダム</button>
+          <button class="btn-primary btn-small" onclick="executeConvert('studlycaps')">交互大小文字</button>
+        </div>
+        <div class="option-row">
+          <button class="btn-primary btn-small" onclick="executeConvert('capitalizeWords')">各単語の先頭を大文字</button>
+          <button class="btn-primary btn-small" onclick="executeConvert('uncapitalizeWords')">各単語の先頭を小文字</button>
+        </div>
+        <div class="option-row">
+          <button class="btn-primary btn-small" onclick="executeConvert('capitalizeSentences')">各文の先頭を大文字</button>
+          <button class="btn-primary btn-small" onclick="executeConvert('uncapitalizeSentences')">各文の先頭を小文字</button>
+        </div>
+        <div class="option-row">
+          <button class="btn-primary btn-small" onclick="executeConvert('snakeCase')">snake_case</button>
+          <button class="btn-primary btn-small" onclick="executeConvert('kebabCase')">kebab-case</button>
+          <button class="btn-primary btn-small" onclick="executeConvert('camelCase')">camelCase</button>
+          <button class="btn-primary btn-small" onclick="executeConvert('pascalCase')">PascalCase</button>
         </div>
       </div>
 
@@ -1208,7 +1224,7 @@ footer {
         <div class="option-row">
           <button class="btn-primary btn-small" onclick="executeConvert('tabToSpace')">TAB→空白</button>
           <button class="btn-primary btn-small" onclick="executeConvert('spaceToTab')">空白→TAB</button>
-          <label style="margin-left:10px;">スペース数: <input type="number" id="convert-tab-spaces" value="4" min="1" max="8" style="width:50px;"></label>
+          <label style="margin-left:10px;">スペース数: <input type="number" id="convert-tab-spaces" value="4" min="1" max="16" style="width:70px;"></label>
         </div>
       </div>
     </div>
@@ -2332,6 +2348,64 @@ function executeConvert(mode) {
       break;
     case 'uppercase':
       output = input.toUpperCase();
+      break;
+    case 'randomcase':
+      // ランダムに大文字/小文字
+      output = input.split('').map(c => Math.random() > 0.5 ? c.toUpperCase() : c.toLowerCase()).join('');
+      break;
+    case 'studlycaps':
+      // 交互に大文字/小文字（StUdLy CaPs）
+      let toggle = true;
+      output = input.split('').map(c => {
+        if (/[a-zA-Z]/.test(c)) {
+          const result = toggle ? c.toUpperCase() : c.toLowerCase();
+          toggle = !toggle;
+          return result;
+        }
+        return c;
+      }).join('');
+      break;
+    case 'capitalizeWords':
+      // 各単語の先頭を大文字
+      output = input.replace(/\b\w/g, c => c.toUpperCase());
+      break;
+    case 'uncapitalizeWords':
+      // 各単語の先頭を小文字
+      output = input.replace(/\b\w/g, c => c.toLowerCase());
+      break;
+    case 'capitalizeSentences':
+      // 各文の先頭を大文字
+      output = input.replace(/(^|[.!?。！？]\s*)\w/g, c => c.toUpperCase());
+      break;
+    case 'uncapitalizeSentences':
+      // 各文の先頭を小文字
+      output = input.replace(/(^|[.!?。！？]\s*)\w/g, c => c.toLowerCase());
+      break;
+    case 'snakeCase':
+      // snake_case
+      output = input
+        .replace(/([a-z])([A-Z])/g, '$1_$2')
+        .replace(/[\s\-]+/g, '_')
+        .toLowerCase();
+      break;
+    case 'kebabCase':
+      // kebab-case
+      output = input
+        .replace(/([a-z])([A-Z])/g, '$1-$2')
+        .replace(/[\s_]+/g, '-')
+        .toLowerCase();
+      break;
+    case 'camelCase':
+      // camelCase
+      output = input
+        .replace(/[\s_\-]+(.)/g, (_, c) => c.toUpperCase())
+        .replace(/^./, c => c.toLowerCase());
+      break;
+    case 'pascalCase':
+      // PascalCase
+      output = input
+        .replace(/[\s_\-]+(.)/g, (_, c) => c.toUpperCase())
+        .replace(/^./, c => c.toUpperCase());
       break;
     
     // 全角→半角
@@ -3481,6 +3555,48 @@ function runAllTests() {
     document.getElementById('inputText').value = 'Hello World';
     executeConvert('uppercase');
     return document.getElementById('outputText').value === 'HELLO WORLD';
+  });
+  
+  test('文字変換 - 各単語の先頭を大文字', () => {
+    document.getElementById('inputText').value = 'hello world test';
+    executeConvert('capitalizeWords');
+    return document.getElementById('outputText').value === 'Hello World Test';
+  });
+  
+  test('文字変換 - 各単語の先頭を小文字', () => {
+    document.getElementById('inputText').value = 'Hello World Test';
+    executeConvert('uncapitalizeWords');
+    return document.getElementById('outputText').value === 'hello world test';
+  });
+  
+  test('文字変換 - 各文の先頭を大文字', () => {
+    document.getElementById('inputText').value = 'hello. world. test';
+    executeConvert('capitalizeSentences');
+    return document.getElementById('outputText').value === 'Hello. World. Test';
+  });
+  
+  test('文字変換 - snake_case', () => {
+    document.getElementById('inputText').value = 'Hello World Test';
+    executeConvert('snakeCase');
+    return document.getElementById('outputText').value === 'hello_world_test';
+  });
+  
+  test('文字変換 - kebab-case', () => {
+    document.getElementById('inputText').value = 'Hello World Test';
+    executeConvert('kebabCase');
+    return document.getElementById('outputText').value === 'hello-world-test';
+  });
+  
+  test('文字変換 - camelCase', () => {
+    document.getElementById('inputText').value = 'hello world test';
+    executeConvert('camelCase');
+    return document.getElementById('outputText').value === 'helloWorldTest';
+  });
+  
+  test('文字変換 - PascalCase', () => {
+    document.getElementById('inputText').value = 'hello world test';
+    executeConvert('pascalCase');
+    return document.getElementById('outputText').value === 'HelloWorldTest';
   });
   
   test('文字変換 - ひらがな→カタカナ', () => {
