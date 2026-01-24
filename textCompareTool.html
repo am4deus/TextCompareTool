@@ -1571,17 +1571,18 @@ function repairShiftedEqualLineRows(rows) {
 
     for (const idx of spacerIndices) {
       if (isNewlineOnlyRow(out[idx])) continue;
-      if (primarySide === 'a') {
-        out[idx] = createNewlineRow('a');
-      } else {
-        out[idx] = createNewlineRow('b');
+      const row = createNewlineRow(primarySide);
+      if (spacerIndices.length === 1) {
+        const oppositeSide = primarySide === 'a' ? 'b' : 'a';
+        if (oppositeSide === 'a') {
+          row.a.tokens = [{ type: 'newline-delete', value: '↵' }];
+          row.a.isEmpty = false;
+        } else {
+          row.b.tokens = [{ type: 'newline-insert', value: '↵' }];
+          row.b.isEmpty = false;
+        }
       }
-    }
-
-    if (spacerIndices.length === 1) {
-      const oppositeSide = primarySide === 'a' ? 'b' : 'a';
-      const insertAt = spacerIndices[0] + 1;
-      out.splice(insertAt, 0, createNewlineRow(oppositeSide));
+      out[idx] = row;
     }
   }
 
