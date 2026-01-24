@@ -970,6 +970,7 @@ footer a:hover {
     <button class="btn-secondary" onclick="clearAll()">クリア</button>
     <button class="btn-secondary" onclick="loadSample()">サンプル</button>
     <button class="btn-secondary" onclick="loadSample2()">サンプル2</button>
+    <button class="btn-secondary" onclick="loadSample3()">サンプル3</button>
     <div class="theme-selector">
       <button class="theme-btn dark" onclick="setTheme('dark')" title="ダーク"></button>
       <button class="theme-btn light active" onclick="setTheme('light')" title="ライト"></button>
@@ -1452,8 +1453,11 @@ function buildRowsByLines(textA, textB) {
     const insBlock = [];
     let j = i;
     while (j < lineDiff.length && (lineDiff[j].type === 'delete' || lineDiff[j].type === 'insert')) {
-      if (lineDiff[j].type === 'delete') if (lineDiff[j].value !== '\n') delBlock.push(toPlainString(lineDiff[j].value));
-      else if (lineDiff[j].value !== '\n') insBlock.push(toPlainString(lineDiff[j].value));
+      if (lineDiff[j].type === 'delete') {
+        if (lineDiff[j].value !== '\n') delBlock.push(toPlainString(lineDiff[j].value));
+      } else if (lineDiff[j].type === 'insert') {
+        if (lineDiff[j].value !== '\n') insBlock.push(toPlainString(lineDiff[j].value));
+      }
       j++;
     }
 
@@ -1483,8 +1487,7 @@ function buildRowsByLines(textA, textB) {
         }
 
         const tokenDiff = generateDiff(tokenize(aLine), tokenize(bLine));
-        const aTokens = diffTokensToRowTokens(tokenDiff, 'delete');
-        const bTokens = diffTokensToRowTokens(tokenDiff, 'insert');
+        const { aTokens, bTokens } = diffTokensToRowTokens(tokenDiff);
 
         pushRow(aTokens, bTokens);
       }
@@ -2262,6 +2265,14 @@ CAAAAAAAAAAAAAA     D9*************** AAAAAAA32`;
   document.getElementById('textA').value = a;
   document.getElementById('textB').value = b;
   // すぐ比較したい場合は次を有効化（現状は入力だけ）
+  compareHybrid();
+}
+
+function loadSample3() {
+  const a = `    from: { row: 1, column: 1 },\n    to: { row: 1, column: 6 }\n  };\n  \n  // 色定義\n  const colors = {\n    delete: { font: 'FFCC0000', bg: 'FFFFD9D9' },\n    insert: { font: 'FF006600', bg: 'FFD9FFD9' },\n    newline: { font: 'FF996600', bg: 'FFFFF0D9' }\n  };\n  \n  // 比較結果を追加\n`;
+  const b = `    from: { row: 1, column: 1 },\n    to: { row: 1, column: 6 }\n  };\n  \n  // 色定義（削除・挿入ともに赤）\n  const colors = {\n    delete: { font: 'FFFF0000', bg: 'FFFFD9D9' },\n    insert: { font: 'FFFF0000', bg: 'FFFFD9D9' },\n    newline: { font: 'FF996600', bg: 'FFFFF0D9' }\n  };\n  \n`;
+  document.getElementById('textA').value = a;
+  document.getElementById('textB').value = b;
   compareHybrid();
 }
 
@@ -3493,4 +3504,3 @@ window.runAllTests = runAllTests;
 </script>
 </body>
 </html>  test_no_object_object_in_line_and_hybrid();
-
