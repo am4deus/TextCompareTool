@@ -3366,7 +3366,8 @@ function test_hybrid_align_shifted_similar_lines() {
     "That will make my batter better."
   ].join("\n");
 
-  const rows = computeHybridRows(A, B);
+  const result = computeHybridRows(A, B);
+  const rows = result.rows || [];
 
   // Expect to find a row where BOTH sides contain "But a bit of better butter"
   let ok = false;
