@@ -962,12 +962,14 @@ footer a:hover {
   </div>
 
   <div class="actions">
-    <button class="btn-primary" onclick="compareHybrid()">ハイブリッド比較 (Ctrl+Enter)</button>
+    <button class="btn-primary" onclick="compareHybrid()">比較する (Ctrl+Enter)</button>
     <button class="btn-secondary" onclick="compareLine()">行比較</button>
     <button class="btn-secondary" onclick="compareChars()">文字比較</button>
+    <button class="btn-secondary" onclick="compareCharsLegacy()">文字比較（レガシー）</button>
     <button class="btn-secondary btn-icon" onclick="swapTexts()" title="左右入れ替え">⇄<span>入替</span></button>
     <button class="btn-secondary" onclick="clearAll()">クリア</button>
     <button class="btn-secondary" onclick="loadSample()">サンプル</button>
+    <button class="btn-secondary" onclick="loadSample2()">サンプル2</button>
     <div class="theme-selector">
       <button class="theme-btn dark" onclick="setTheme('dark')" title="ダーク"></button>
       <button class="theme-btn light active" onclick="setTheme('light')" title="ライト"></button>
@@ -1198,6 +1200,103 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// トークン値を安全に文字列化（[object Object] 対策 / 配列・トークン配列も許容）
+function safeStringify(value) {
+  try {
+    const seen = new WeakSet();
+    return JSON.stringify(value, (k, v) => {
+      if (typeof v === 'bigint') return v.toString();
+      if (typeof v === 'object' && v !== null) {
+        if (seen.has(v)) return '[Circular]';
+        seen.add(v);
+      }
+      return v;
+    });
+  } catch (_) {
+    // 最後の保険。ここが走っても "[object Object]" を出さない。
+    try { return String(value); } catch { return '[Object]'; }
+  }
+}
+
+// トークンの value を「必ず文字列」にする（[object Object] を避ける）
+function tokenValueToString(value, _depth = 0) {
+  // value は文字列が基本だが、実装変更や差分アルゴリズムの戻り値によって
+  // 配列/トークンオブジェクトが混ざることがある。
+  // ここで「確実に表示用の文字列」に落とし込む（[object Object] を出さない）。
+  if (_depth > 6) return '';
+  if (value === null || value === undefined) return '';
+  const t = typeof value;
+  if (t === 'string') return value;
+  if (t === 'number' || t === 'boolean' || t === 'bigint') return String(value);
+
+  // 配列（例: トークン配列 / 文字列配列 / オブジェクト配列）
+  if (Array.isArray(value)) {
+    let out = '';
+    for (let i = 0; i < value.length; i++) {
+      out += tokenValueToString(value[i], _depth + 1);
+    }
+    return out;
+  }
+
+  // オブジェクト（例: {type, value} / Intl.Segmenter の segment / 独自構造）
+  if (t === 'object') {
+    // 典型: { type: 'equal'|'insert'|'delete'|'newline', value: '...' }
+    if (Object.prototype.hasOwnProperty.call(value, 'value')) {
+      return tokenValueToString(value.value, _depth + 1);
+    }
+    // Intl.Segmenter の segment や、ありがちなフィールド名
+    if (typeof value.segment === 'string') return value.segment;
+    if (typeof value.text === 'string') return value.text;
+    if (typeof value.str === 'string') return value.str;
+    if (typeof value.line === 'string') return value.line;
+    if (typeof value.raw === 'string') return value.raw;
+
+    // Stringオブジェクト等: valueOf が文字列ならそれを採用
+    try {
+      const v = (typeof value.valueOf === 'function') ? value.valueOf() : null;
+      if (typeof v === 'string') return v;
+    } catch (e) {}
+
+    // toString が有用な場合（デフォルトの "[object Object]" は除外）
+    try {
+      const s = (typeof value.toString === 'function') ? value.toString() : null;
+      if (typeof s === 'string' && s !== '[object Object]') return s;
+    } catch (e) {}
+
+    // よくある入れ子（value / token / segment など）
+    const candidates = ['value','token','segment','text','str','s','line','raw'];
+    for (const k of candidates) {
+      if (Object.prototype.hasOwnProperty.call(value, k)) {
+        const out = tokenValueToString(value[k]);
+        if (typeof out === 'string' && out !== '[object Object]') return out;
+      }
+    }
+
+    // 最後の手段: 循環参照でも落ちない stringify
+    try {
+      const seen = new WeakSet();
+      return JSON.stringify(value, (k, v) => {
+        if (typeof v === 'object' && v !== null) {
+          if (seen.has(v)) return '[Circular]';
+          seen.add(v);
+        }
+        if (typeof v === 'bigint') return v.toString();
+        return v;
+      });
+    } catch (e) {
+      return Object.prototype.toString.call(value);
+    }
+  }
+
+  // function / symbol など
+  try { return String(value); } catch (e) { return ''; }
+}
+
+
+// 「比較処理に入れる前」用: 表示用に強制文字列化（[object Object] を根絶）
+function toPlainString(v) {
+  return tokenValueToString(v);
+}
 // 行分割（末尾改行も保持: "a\n" -> ["a",""]）
 function splitLinesKeepEmpty(text) {
   // ここでは compare() で改行正規化済み（\r除去）を前提
@@ -1225,100 +1324,190 @@ function diffTokensToRowTokens(diffTokens) {
 // テキスト全体を「行単位」でLCS差分 → 行ごとに（必要なら行内も）差分化して rows を作る
 function buildRowsByLines(textA, textB) {
   const rows = [];
-  const linesA = splitLinesKeepEmpty(textA);
-  const linesB = splitLinesKeepEmpty(textB);
+  const linesA = splitLinesKeepEmpty(textA).map(toPlainString);
+  const linesB = splitLinesKeepEmpty(textB).map(toPlainString);
 
-  // まず行単位の差分
   const lineDiff = generateDiff(linesA, linesB);
 
-  function pushRow(aTokens, bTokens) {
+  function pushRow(aTokens, bTokens, opts) {
     rows.push({
-      a: { tokens: aTokens, isEmpty: aTokens.length === 0 },
-      b: { tokens: bTokens, isEmpty: bTokens.length === 0 }
+      a: { tokens: aTokens || [], isEmpty: !!(opts && opts.aEmpty) },
+      b: { tokens: bTokens || [], isEmpty: !!(opts && opts.bEmpty) }
     });
   }
 
-  for (let i = 0; i < lineDiff.length; ) {
-    const cur = lineDiff[i];
-    const next = (i + 1 < lineDiff.length) ? lineDiff[i + 1] : null;
+  // 行同士の「近さ」を出すための正規化（比較用）
+  function _normLineForMatch(s) {
+    if (s == null) return '';
+    // 末尾空白は比較対象に含める（差分として出したい）のでtrimEndはしない
+    // ただし比較の揺れを減らすため、連続空白は1つに縮約しておく
+    return String(s).replace(/\r/g, '').replace(/[ \t]+/g, ' ').toLowerCase();
+  }
 
-    // delete + insert の並びは「同一行の置換」として扱う（行内差分を出す）
-    if (cur.type === 'delete' && next && next.type === 'insert') {
-      const aLine = cur.value;
-      const bLine = next.value;
+  function _bigrams(s) {
+    const out = [];
+    for (let i = 0; i + 1 < s.length; i++) out.push(s.slice(i, i + 2));
+    return out;
+  }
 
-      // 両方空（理論上ほぼ出ないが保険）→ 空行として1行
-      if (aLine === '' && bLine === '') {
-        pushRow([], []);
-        i += 2;
-        continue;
+  function _diceSimilarity(a, b) {
+    if (a === b) return 1;
+    if (!a || !b) return 0;
+    const A = _bigrams(a);
+    const B = _bigrams(b);
+    if (A.length === 0 || B.length === 0) return 0;
+
+    const m = new Map();
+    for (const x of A) m.set(x, (m.get(x) || 0) + 1);
+
+    let inter = 0;
+    for (const y of B) {
+      const c = m.get(y) || 0;
+      if (c > 0) {
+        inter++;
+        m.set(y, c - 1);
       }
+    }
+    return (2 * inter) / (A.length + B.length);
+  }
 
-      // 片側だけ空行なら、改行差分（↵行）に寄せる
-      if (aLine === '' && bLine !== '') {
-        // B側が「行を追加」した（空行→文字列）は、B側insert行として表示
-        const diffTokens = generateDiff(tokenize(aLine), tokenize(bLine));
-        const { aTokens, bTokens } = diffTokensToRowTokens(diffTokens);
+  function _lineSimilarity(aLine, bLine) {
+    // 空行は「改行の存在」そのものなので、空行と非空行がマッチしないようにする
+    const aEmpty = (aLine === '');
+    const bEmpty = (bLine === '');
+    if (aEmpty && bEmpty) return 1;
+    if (aEmpty !== bEmpty) return -1; // 絶対にペアリングさせない
+
+    const a = _normLineForMatch(aLine);
+    const b = _normLineForMatch(bLine);
+    if (a === b) return 1;
+    return _diceSimilarity(a, b);
+  }
+
+  // delete×N と insert×M を、できるだけ「似ている行同士」でペアにする
+  // DPで最小コスト整列（ギャップ許可）
+  function _alignReplaceBlock(delLines, insLines) {
+    const n = delLines.length;
+    const m = insLines.length;
+
+    const gap = 0.65; // ギャップのコスト（小さすぎると何でもギャップになり、でかすぎると変なマッチをする）
+    const BIG = 9999;
+
+    const dp = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
+    const bt = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0)); // 1=match 2=del-gap 3=ins-gap
+
+    dp[0][0] = 0;
+    for (let i = 1; i <= n; i++) { dp[i][0] = dp[i - 1][0] + gap; bt[i][0] = 2; }
+    for (let j = 1; j <= m; j++) { dp[0][j] = dp[0][j - 1] + gap; bt[0][j] = 3; }
+
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        const sim = _lineSimilarity(delLines[i - 1], insLines[j - 1]);
+        const matchCost = (sim < 0) ? BIG : (1 - sim);
+        const cMatch = dp[i - 1][j - 1] + matchCost;
+        const cDel = dp[i - 1][j] + gap;
+        const cIns = dp[i][j - 1] + gap;
+
+        let best = cMatch;
+        let code = 1;
+        if (cDel < best) { best = cDel; code = 2; }
+        if (cIns < best) { best = cIns; code = 3; }
+
+        dp[i][j] = best;
+        bt[i][j] = code;
+      }
+    }
+
+    const pairsRev = [];
+    let i = n, j = m;
+    while (i > 0 || j > 0) {
+      const code = bt[i][j];
+      if (code === 1) {
+        pairsRev.push({ a: delLines[i - 1], b: insLines[j - 1] });
+        i--; j--;
+      } else if (code === 2) {
+        pairsRev.push({ a: delLines[i - 1], b: null });
+        i--;
+      } else {
+        pairsRev.push({ a: null, b: insLines[j - 1] });
+        j--;
+      }
+    }
+    pairsRev.reverse();
+    return pairsRev;
+  }
+
+  // メイン：lineDiff を行テーブル rows に変換
+  for (let i = 0; i < lineDiff.length; i++) {
+    const item = lineDiff[i];
+
+    if (item.type === 'equal') {
+      // 同一行（空行も含む）
+      pushRow([{ type: 'equal', value: toPlainString(item.value) }], [{ type: 'equal', value: toPlainString(item.value) }]);
+      continue;
+    }
+
+    // 連続する delete/insert をまとめて処理（replaceブロック）
+    const delBlock = [];
+    const insBlock = [];
+    let j = i;
+    while (j < lineDiff.length && (lineDiff[j].type === 'delete' || lineDiff[j].type === 'insert')) {
+      if (lineDiff[j].type === 'delete') if (lineDiff[j].value !== '
+') delBlock.push(toPlainString(lineDiff[j].value));
+      else if (lineDiff[j].value !== '
+') insBlock.push(toPlainString(lineDiff[j].value));
+      j++;
+    }
+
+    if (delBlock.length && insBlock.length) {
+      const pairs = _alignReplaceBlock(delBlock, insBlock);
+
+      for (const p of pairs) {
+        const aLine = p.a;
+        const bLine = p.b;
+
+        // 片側のみ（削除/挿入）
+        if (aLine != null && bLine == null) {
+          if (aLine === '') pushRow([{ type: 'newline-delete', value: '↵' }], [], { bEmpty: true });
+          else pushRow([{ type: 'delete', value: aLine }], [], { bEmpty: true });
+          continue;
+        }
+        if (aLine == null && bLine != null) {
+          if (bLine === '') pushRow([], [{ type: 'newline-insert', value: '↵' }], { aEmpty: true });
+          else pushRow([], [{ type: 'insert', value: bLine }], { aEmpty: true });
+          continue;
+        }
+
+        // 両側あり
+        if (aLine === '' && bLine === '') {
+          pushRow([{ type: 'equal', value: '' }], [{ type: 'equal', value: '' }]);
+          continue;
+        }
+
+        const tokenDiff = generateDiff(tokenize(aLine), tokenize(bLine));
+        const aTokens = diffTokensToRowTokens(tokenDiff, 'delete');
+        const bTokens = diffTokensToRowTokens(tokenDiff, 'insert');
+
         pushRow(aTokens, bTokens);
-        i += 2;
-        continue;
       }
-      if (aLine !== '' && bLine === '') {
-        const diffTokens = generateDiff(tokenize(aLine), tokenize(bLine));
-        const { aTokens, bTokens } = diffTokensToRowTokens(diffTokens);
-        pushRow(aTokens, bTokens);
-        i += 2;
-        continue;
+    } else if (delBlock.length) {
+      for (const aLine of delBlock) {
+        if (aLine === '') pushRow([{ type: 'newline-delete', value: '↵' }], [], { bEmpty: true });
+        else pushRow([{ type: 'delete', value: aLine }], [], { bEmpty: true });
       }
-
-      // 通常: 行内差分
-      const diffTokens = generateDiff(tokenize(aLine), tokenize(bLine));
-      const { aTokens, bTokens } = diffTokensToRowTokens(diffTokens);
-      pushRow(aTokens, bTokens);
-
-      i += 2;
-      continue;
+    } else {
+      for (const bLine of insBlock) {
+        if (bLine === '') pushRow([], [{ type: 'newline-insert', value: '↵' }], { aEmpty: true });
+        else pushRow([], [{ type: 'insert', value: bLine }], { aEmpty: true });
+      }
     }
 
-    if (cur.type === 'equal') {
-      // 空行（= 連続改行）も「1行」として出す
-      if (cur.value === '') {
-        pushRow([], []);
-      } else {
-        pushRow([{ type: 'equal', value: cur.value }], [{ type: 'equal', value: cur.value }]);
-      }
-      i++;
-      continue;
-    }
-
-    if (cur.type === 'delete') {
-      // A側だけに空行が存在（= A側に改行が1つ多い）→ ↵行として出す
-      if (cur.value === '') {
-        pushRow([{ type: 'newline-delete', value: '↵' }], []);
-      } else {
-        pushRow([{ type: 'delete', value: cur.value }], []);
-      }
-      i++;
-      continue;
-    }
-
-    if (cur.type === 'insert') {
-      // B側だけに空行が存在（= B側に改行が1つ多い）→ ↵行として出す
-      if (cur.value === '') {
-        pushRow([], [{ type: 'newline-insert', value: '↵' }]);
-      } else {
-        pushRow([], [{ type: 'insert', value: cur.value }]);
-      }
-      i++;
-      continue;
-    }
-
-    // 不明タイプ（保険）
-    i++;
+    i = j - 1;
   }
 
   return rows;
 }
+
 
 
 // 差分を行ごとにレンダリング
@@ -1355,8 +1544,9 @@ function renderDiff(diff) {
   }
 
   for (const item of diff) {
+    const v = toPlainString(item.value);
     // === 改行トークンは「その時点で必ず行境界として処理」する ===
-    if (item.value === '\n') {
+    if (v === '\n') {
       if (item.type === 'equal') {
         // 両方の改行: 現在行を確定。空なら空行として出す
         if (currentA.length === 0 && currentB.length === 0) flush(true);
@@ -1375,12 +1565,12 @@ function renderDiff(diff) {
 
     // === 通常トークン ===
     if (item.type === 'equal') {
-      currentA.push({ type: 'equal', value: item.value });
-      currentB.push({ type: 'equal', value: item.value });
+      currentA.push({ type: 'equal', value: v });
+      currentB.push({ type: 'equal', value: v });
     } else if (item.type === 'delete') {
-      currentA.push({ type: 'delete', value: item.value });
+      currentA.push({ type: 'delete', value: v });
     } else if (item.type === 'insert') {
-      currentB.push({ type: 'insert', value: item.value });
+      currentB.push({ type: 'insert', value: v });
     }
   }
 
@@ -1416,6 +1606,155 @@ function renderDiff(diff) {
 
 }
 
+function renderDiffLegacy(diff) {
+  const rows = [];
+  let currentA = [];
+  let currentB = [];
+  
+  // 両方に改行が来たときだけflush
+  function flush() {
+    if (currentA.length > 0 || currentB.length > 0) {
+      rows.push({
+        a: { tokens: currentA, isEmpty: currentA.length === 0 },
+        b: { tokens: currentB, isEmpty: currentB.length === 0 }
+      });
+    }
+    currentA = [];
+    currentB = [];
+  }
+  
+  let pendingNewlineA = false;
+  let pendingNewlineB = false;
+  
+  for (const item of diff) {
+    if (item.type === 'equal') {
+      if (item.value === '\n') {
+        // 両方に改行 → 行を確定
+        flush();
+      } else {
+        currentA.push({ type: 'equal', value: item.value });
+        currentB.push({ type: 'equal', value: item.value });
+      }
+    } else if (item.type === 'delete') {
+      if (item.value === '\n') {
+        // Aだけ改行 → 改行マーカーを追加してそのまま続ける
+        currentA.push({ type: 'newline-delete', value: '↵' });
+      } else {
+        currentA.push({ type: 'delete', value: item.value });
+      }
+    } else if (item.type === 'insert') {
+      if (item.value === '\n') {
+        // Bだけ改行 → 改行マーカーを追加してそのまま続ける
+        currentB.push({ type: 'newline-insert', value: '↵' });
+      } else {
+        currentB.push({ type: 'insert', value: item.value });
+      }
+    }
+  }
+  
+  // 最後の行
+  flush();
+  
+  return rows;
+}
+
+
+
+// 文字比較（全文トークン）で発生しがちな「単語 + 改行差分 + 先頭スペース付き続き」
+// ＝本来は同一行なのに途中で分割される表示を修復する。
+// 例： A: "It will ..." / B: "\nThat will ..."
+// diffが "delete It" → "insert \n" → "insert That" → "equal  will ..." の並びになり、
+// 表示が "It" 行 + "↵" 行 + " will ..." 行 になるケースを
+// "↵" 行を前へ移動し、"It" と " will ..." を同一行へ統合する。
+function repairMidlineNewlineRows(rows) {
+  function isNewlineOnlyRow(r) {
+    const aLen = r.a.tokens.length;
+    const bLen = r.b.tokens.length;
+    const aNewlineOnly = (aLen === 1 && r.a.tokens[0].type && r.a.tokens[0].type.indexOf('newline-') === 0 && bLen === 0);
+    const bNewlineOnly = (bLen === 1 && r.b.tokens[0].type && r.b.tokens[0].type.indexOf('newline-') === 0 && aLen === 0);
+    return aNewlineOnly || bNewlineOnly;
+  }
+
+  function tokenText(tokens) {
+    let s = '';
+    for (const t of tokens) s += t.value || '';
+    return s;
+  }
+
+  function isLeadingWordOnlyRow(r) {
+    const aEmpty = r.a.tokens.length === 0;
+    const bEmpty = r.b.tokens.length === 0;
+    if (aEmpty === bEmpty) return false; // 片側だけ
+    const tokens = aEmpty ? r.b.tokens : r.a.tokens;
+    const s = tokenText(tokens);
+
+    // 改行は含まない
+    if (s.indexOf('\n') !== -1) return false;
+
+    // 1単語（英数字/記号混在でもOK）+ 末尾に空白が無い、というくらいの緩い判定
+    // （"It" / "That" / "Will" などを想定）
+    if (s.trim() !== s) return false; // 前後に空白を含むなら単語だけではない
+    if (s.length === 0) return false;
+    // スペースを含むなら単語だけではない
+    if (s.indexOf(' ') !== -1 || s.indexOf('\t') !== -1) return false;
+
+    return true;
+  }
+
+  function startsWithSpaceOnNonEmptySide(r) {
+    const aEmpty = r.a.tokens.length === 0;
+    const bEmpty = r.b.tokens.length === 0;
+    // 両方空は除外
+    if (aEmpty && bEmpty) return false;
+
+    // どちらかの表示側テキストの先頭がスペースなら true
+    const aText = aEmpty ? '' : tokenText(r.a.tokens);
+    const bText = bEmpty ? '' : tokenText(r.b.tokens);
+
+    const aOk = aText.length > 0 && (aText[0] === ' ' || aText[0] === '\t');
+    const bOk = bText.length > 0 && (bText[0] === ' ' || bText[0] === '\t');
+
+    return aOk || bOk;
+  }
+
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    // パターン: [単語だけ片側] [改行差分] [先頭スペースで続く行]
+    if (i + 2 < rows.length && isLeadingWordOnlyRow(rows[i]) && isNewlineOnlyRow(rows[i + 1]) && startsWithSpaceOnNonEmptySide(rows[i + 2])) {
+      const wordRow = rows[i];
+      const nlRow = rows[i + 1];
+      const contRow = rows[i + 2];
+
+      // 1) まず改行差分行を先に出す（＝本来の行境界として扱う）
+      out.push(nlRow);
+
+      // 2) 単語行 + 続き行 を統合
+      const merged = {
+        a: { tokens: [], isEmpty: false },
+        b: { tokens: [], isEmpty: false }
+      };
+
+      // A側
+      merged.a.tokens = (wordRow.a.tokens.length ? wordRow.a.tokens.slice() : []).concat(contRow.a.tokens.length ? contRow.a.tokens.slice() : []);
+      merged.b.tokens = (wordRow.b.tokens.length ? wordRow.b.tokens.slice() : []).concat(contRow.b.tokens.length ? contRow.b.tokens.slice() : []);
+
+      merged.a.isEmpty = merged.a.tokens.length === 0;
+      merged.b.isEmpty = merged.b.tokens.length === 0;
+
+      out.push(merged);
+
+      i += 2;
+      continue;
+    }
+
+    out.push(rows[i]);
+  }
+
+  return out;
+}
+
+
+
 
 
 
@@ -1448,9 +1787,9 @@ function rowToHtml(row) {
         html += wrapWithClass(buffer, currentType);
       }
       currentType = item.type;
-      buffer = escapeHtml(item.value);
+      buffer = escapeHtml(tokenValueToString(item.value));
     } else {
-      buffer += escapeHtml(item.value);
+      buffer += escapeHtml(tokenValueToString(item.value));
     }
   }
   if (buffer) {
@@ -1566,10 +1905,10 @@ function compareLine() {
   // 改行コード正規化（WindowsのCRLF/CRをLFに統一）
   textA = textA.replace(/\r\n?/g, '\n');
   textB = textB.replace(/\r\n?/g, '\n');
-const rows = buildRowsByLines(textA, textB);
+const rows = _normalizeRowsTokens(buildRowsByLines(textA, textB));
 
   // line-based diff でも統計用に diff 相当（差分有無判定）を作る
-  const hasDiff = rows.some(r => r.a.tokens.some(t => t.type !== 'equal') || r.b.tokens.some(t => t.type !== 'equal'));
+  const hasDiff = rows.some(r => _tTokenArray(r.a.tokens).some(t => t.type !== 'equal') || _tTokenArray(r.b.tokens).some(t => t.type !== 'equal'));
 // Excelダウンロード用に保存
   lastDiffRows = rows;
   
@@ -1580,6 +1919,8 @@ const rows = buildRowsByLines(textA, textB);
 }
 
 function renderComparisonRows(rows, textA, textB, hasDiff) {
+  _normalizeRowsTokens(rows);
+
   const tbody = document.getElementById('diffBody');
   tbody.innerHTML = '';
   // 差分カウント用
@@ -1605,8 +1946,8 @@ function renderComparisonRows(rows, textA, textB, hasDiff) {
       const tr = document.createElement('tr');
 
       // 差分がない行はクラス付与（差分のみ表示で非表示にする）
-      const rowHasDiff = row.a.tokens.some(t => t.type === 'delete' || (t.type && t.type.startsWith('newline'))) ||
-                         row.b.tokens.some(t => t.type === 'insert' || (t.type && t.type.startsWith('newline')));
+      const rowHasDiff = _tTokenArray(row.a.tokens).some(t => t.type === 'delete' || (t.type && t.type.startsWith('newline'))) ||
+                         _tTokenArray(row.b.tokens).some(t => t.type === 'insert' || (t.type && t.type.startsWith('newline')));
       if (!rowHasDiff) {
         tr.classList.add('no-diff-row');
       } else {
@@ -1686,6 +2027,27 @@ function renderComparisonRows(rows, textA, textB, hasDiff) {
 
 
 // 互換: 既存の呼び出し（Ctrl+Enter等）は compare() を使う場合があるので、行比較へ委譲
+
+// tokens が「配列」でないケース（文字列/単一token/undefined）に備えて正規化
+function _ensureTokenArray(tokens) {
+  if (Array.isArray(tokens)) return tokens;
+  if (tokens == null) return [];
+  // すでに {type,value} の単一tokenっぽい
+  if (typeof tokens === 'object' && ('type' in tokens || 'value' in tokens)) return [tokens];
+  // 文字列など
+  return [{ type: 'equal', value: String(tokens) }];
+}
+
+function _normalizeRowsTokens(rows) {
+  if (!Array.isArray(rows)) return rows;
+  for (const r of rows) {
+    if (!r || !r.a || !r.b) continue;
+    r.a.tokens = _ensureTokenArray(r.a.tokens);
+    r.b.tokens = _ensureTokenArray(r.b.tokens);
+  }
+  return rows;
+}
+
 function compare() {
   return compareHybrid();
 }
@@ -1702,10 +2064,10 @@ function compareChars() {
   const tokensA = tokenize(textA);
   const tokensB = tokenize(textB);
   const diff = generateDiff(tokensA, tokensB);
-  const rows = renderDiff(diff);
-
+  let rows = _normalizeRowsTokens(renderDiff(diff));
+  rows = repairMidlineNewlineRows(rows);
   // 差分があるか（行単位の表示でも判定は rows で十分）
-  const hasDiff = rows.some(r => r.a.tokens.some(t => t.type !== 'equal') || r.b.tokens.some(t => t.type !== 'equal'));
+  const hasDiff = rows.some(r => _tTokenArray(r.a.tokens).some(t => t.type !== 'equal') || _tTokenArray(r.b.tokens).some(t => t.type !== 'equal'));
 
   // Excelダウンロード用に保存
   lastDiffRows = rows;
@@ -1714,34 +2076,111 @@ function compareChars() {
   renderComparisonRows(rows, textA, textB, hasDiff);
 }
 
+function compareCharsLegacy() {
+  let textA = document.getElementById('textA').value;
+  let textB = document.getElementById('textB').value;
+
+  // 改行コード正規化（WindowsのCRLF/CRをLFに統一）
+  textA = textA.replace(/\r\n?/g, '\n');
+  textB = textB.replace(/\r\n?/g, '\n');
+
+  const tokensA = tokenize(textA);
+  const tokensB = tokenize(textB);
+  const diff = generateDiff(tokensA, tokensB);
+
+  // レガシー：行内の改行差分を“修復”しない（昔の挙動を再現）
+  const rows = renderDiffLegacy(diff);
+const hasDiff = rows.some(r => _tTokenArray(r.a.tokens).some(t => t.type !== 'equal') || _tTokenArray(r.b.tokens).some(t => t.type !== 'equal'));
+
+  // Excelダウンロード用に保存
+  lastDiffRows = rows;
+
+  renderComparisonRows(rows, textA, textB, hasDiff);
+}
+
+
+
 // 行比較と文字比較を両方走らせ、表示が「崩れて見える」方を避けるハイブリッド
 function scoreRowsForDisplay(rows) {
   let newlineOnly = 0;
   let emptySide = 0;
   let bothEmpty = 0;
-  let total = rows.length;
+  let midlineSplit = 0;
+  const total = rows.length;
+
+  function isNewlineOnly(r) {
+    const aLen = r.a.tokens.length;
+    const bLen = r.b.tokens.length;
+    const aNewlineOnly = (aLen === 1 && r.a.tokens[0].type && String(r.a.tokens[0].type).startsWith('newline') && bLen === 0);
+    const bNewlineOnly = (bLen === 1 && r.b.tokens[0].type && String(r.b.tokens[0].type).startsWith('newline') && aLen === 0);
+    return aNewlineOnly || bNewlineOnly;
+  }
+
+  function tokenText(tokens) {
+    let s = '';
+    for (const t of tokens) s += (t.value || '');
+    return s;
+  }
 
   for (const r of rows) {
     const aEmpty = r.a.tokens.length === 0;
     const bEmpty = r.b.tokens.length === 0;
 
     if (aEmpty && bEmpty) bothEmpty++;
-
-    // newline-only（↵だけの行）
-    const aLen = r.a.tokens.length;
-    const bLen = r.b.tokens.length;
-    const aNL = (aLen === 1 && r.a.tokens[0].type && String(r.a.tokens[0].type).startsWith('newline') && bLen === 0);
-    const bNL = (bLen === 1 && r.b.tokens[0].type && String(r.b.tokens[0].type).startsWith('newline') && aLen === 0);
-    if (aNL || bNL) newlineOnly++;
-
-    // empty-cell（片側が空） ※newline-onlyは別で強めに罰則を入れるので、ここでは重複カウントOK
     if (aEmpty !== bEmpty) emptySide++;
+    if (isNewlineOnly(r)) newlineOnly++;
+  }
+
+  // midline split（単語 + ↵ + 続き）を強めに罰則
+  for (let i = 0; i + 2 < rows.length; i++) {
+    const r0 = rows[i];
+    const r1 = rows[i + 1];
+    const r2 = rows[i + 2];
+    if (!isNewlineOnly(r1)) continue;
+
+    const a0only = r0.a.tokens.length > 0 && r0.b.tokens.length === 0;
+    const b0only = r0.b.tokens.length > 0 && r0.a.tokens.length === 0;
+    if (!(a0only || b0only)) continue;
+
+    const s0 = tokenText(a0only ? r0.a.tokens : r0.b.tokens);
+    if (s0.length === 0) continue;
+    if (s0.trim() !== s0) continue;
+    if (s0.indexOf(' ') !== -1 || s0.indexOf('\t') !== -1 || s0.indexOf('\n') !== -1) continue;
+
+    const s2a = r2.a.tokens.length ? tokenText(r2.a.tokens) : '';
+    const s2b = r2.b.tokens.length ? tokenText(r2.b.tokens) : '';
+    const contStartsWithSpace = (s2a.length && (s2a[0] === ' ' || s2a[0] === '\t')) || (s2b.length && (s2b[0] === ' ' || s2b[0] === '\t'));
+    if (!contStartsWithSpace) continue;
+
+    midlineSplit++;
   }
 
   // 重み：newline-only が一番「壊れて見える」ので強め
-  // totalRows も少しだけ入れて、無駄に分割が多い表示を避ける
-  const score = (newlineOnly * 8) + (emptySide * 3) + (total * 0.2) + (bothEmpty * 0.5);
-  return { score, newlineOnly, emptySide, bothEmpty, total };
+  // midlineSplit も強めに罰則
+  const score = (newlineOnly * 8) + (midlineSplit * 10) + (emptySide * 3) + (total * 0.2) + (bothEmpty * 0.5);
+  return { score, newlineOnly, midlineSplit, emptySide, bothEmpty, total };
+}
+
+function computeHybridRows(textA, textB) {
+  // 1) 行比較
+  const rowsLine = buildRowsByLines(textA, textB);
+
+  // 2) 文字比較（トークン列）→ 行分割
+  const diffChars = generateDiff(tokenize(textA), tokenize(textB));
+  let rowsChars = renderDiff(diffChars);
+  rowsChars = repairMidlineNewlineRows(rowsChars);
+  // 3) スコアで「より自然に見える方」を選ぶ
+  const sLine = scoreRowsForDisplay(rowsLine);
+  const sChars = scoreRowsForDisplay(rowsChars);
+
+  const useLine = (sLine.score <= sChars.score);
+  const rows = useLine ? rowsLine : rowsChars;
+
+  return {
+    rows,
+    method: useLine ? 'line' : 'chars',
+    scores: { line: sLine, chars: sChars }
+  };
 }
 
 function compareHybrid() {
@@ -1752,30 +2191,19 @@ function compareHybrid() {
   textA = textA.replace(/\r\n?/g, '\n');
   textB = textB.replace(/\r\n?/g, '\n');
 
-  // 1) 行比較
-  const rowsLine = buildRowsByLines(textA, textB);
+  const result = computeHybridRows(textA, textB);
 
-  // 2) 文字比較（トークン列）→ 行分割
-  const diffChars = generateDiff(tokenize(textA), tokenize(textB));
-  const rowsChars = renderDiff(diffChars);
-
-  // 3) スコアで「より自然に見える方」を選ぶ
-  const sLine = scoreRowsForDisplay(rowsLine);
-  const sChars = scoreRowsForDisplay(rowsChars);
-
-  // デバッグしやすいようにコンソールへ
+  // デバッグしやすいようにコンソールへ（必要なければ消してOK）
   console.groupCollapsed('🧩 compareHybrid: scoring');
-  console.log('line', sLine);
-  console.log('chars', sChars);
+  console.log('method', result.method);
+  console.log('line', result.scores.line);
+  console.log('chars', result.scores.chars);
   console.groupEnd();
 
-  const useLine = (sLine.score <= sChars.score);
-  const rows = useLine ? rowsLine : rowsChars;
-
-  const hasDiff = rows.some(r => r.a.tokens.some(t => t.type !== 'equal') || r.b.tokens.some(t => t.type !== 'equal'));
+  const rows = _normalizeRowsTokens(result.rows);
+  const hasDiff = rows.some(r => _tTokenArray(r.a.tokens).some(t => t.type !== 'equal') || _tTokenArray(r.b.tokens).some(t => t.type !== 'equal'));
 
   lastDiffRows = rows;
-
   renderComparisonRows(rows, textA, textB, hasDiff);
 }
 
@@ -1793,6 +2221,7 @@ function loadSample() {
   document.getElementById('textA').value = `下記の文章を比較してください。
    Betty Botter bought some butter, 
 But, she said, this butter's bitter;
+
 If I put it in my batter,
 It will make my batter bitter,
 But a bit of better butter
@@ -1808,6 +2237,7 @@ Bought a bit of better butter.`;
 Betty Botter bought some butter,
 But, she said, the butter's bitter;
 If I put it in my batter,
+
 That will make my batter bitter.
 But a bit of better butter, 
 That will make my batter better.
@@ -1820,6 +2250,23 @@ Bought a bit of better butter.`;
 
   compare();
 }
+
+function loadSample2() {
+  const a = `AAAAAAAAAAAAAAA     B9*************** AAAAAAA32
+AAAAAAAAAAAAAAA     A9*************** AAAAAAA32
+AAAAAAAAAAAAAAA     B9*************** AAAAAAA32
+AAAAAAAAAAAAAAA     C9*************** AAAAAAA32
+AAAAAAAAAAAAAAA     D9*************** AAAAAAA32`;
+  const b = `AAAAAAAAAAAAAAA     B9*************** AAAAAAA32
+AAAAAAAAAAAAAAA     B9*************** AAAAAAA32
+AAAAAAAAAAAAAAA     C9*************** AAAAAAA32
+CAAAAAAAAAAAAAA     D9*************** AAAAAAA32`;
+  document.getElementById('textA').value = a;
+  document.getElementById('textB').value = b;
+  // すぐ比較したい場合は次を有効化（現状は入力だけ）
+  compareHybrid();
+}
+
 
 // 左右入れ替え
 function swapTexts() {
@@ -2070,7 +2517,7 @@ function tokensToPlain(tokens) {
       s += '\n';
       continue;
     }
-    if (typeof t.value === 'string') s += t.value;
+    s += tokenValueToString(t.value);
   }
   return s;
 }
@@ -2135,8 +2582,8 @@ async function downloadExcel() {
   // 比較結果を追加
   lastDiffRows.forEach((row, index) => {
     // 差分があるかチェック
-    const hasDiff = row.a.tokens.some(t => t.type === 'delete' || t.type.startsWith('newline')) ||
-                    row.b.tokens.some(t => t.type === 'insert' || t.type.startsWith('newline'));
+    const hasDiff = _tTokenArray(row.a.tokens).some(t => t.type === 'delete' || t.type.startsWith('newline')) ||
+                    _tTokenArray(row.b.tokens).some(t => t.type === 'insert' || t.type.startsWith('newline'));
     
     const excelRow = ws.addRow([index + 1, '', '', !hasDiff, '', '']);    
     // 改行差分行（↵だけの行）は、UIのグレーアウトをExcelにも反映
@@ -2380,7 +2827,7 @@ function applyRichText(cell, tokens, colors, baseFontSize = 11) {
       continue;
     }
 
-    const raw = (typeof token.value === 'string') ? token.value : '';
+    const raw = tokenValueToString(token.value);
 
     // ␣ と ⇥ の可視化は差分（insert/delete）のみ
     const txt = (token.type === 'insert' || token.type === 'delete')
@@ -2559,6 +3006,77 @@ function _tJsonEq(a, b, msg) {
 }
 
 // 改行差分行（↵だけの行）の判定（Excel側と同じ条件で揃える）
+
+function _tNowMs() {
+  return (typeof performance !== 'undefined' && performance && typeof performance.now === 'function')
+    ? performance.now()
+    : Date.now();
+}
+
+function _tLogStart(name) {
+  try { console.groupCollapsed(`🧪 ${name}`); } catch (e) {}
+  return _tNowMs();
+}
+
+function _tLogEnd(t0) {
+  const dt = _tNowMs() - t0;
+  try { console.log(`⏱ ${dt.toFixed(2)}ms`); console.groupEnd(); } catch (e) {}
+}
+
+// rows 内の「文字列以外の値」を検出（[object Object] の原因調査用）
+function _tFindNonStringTokenValues(rows) {
+  const hits = [];
+  const pushHit = (i, side, tok) => {
+    hits.push({
+      row: i + 1,
+      side,
+      type: tok && tok.type,
+      valueType: tok && tok.value === null ? 'null' : typeof (tok && tok.value),
+      value: tok && tok.value
+    });
+  };
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    for (const sideKey of ['a', 'b']) {
+      const s = r[sideKey];
+      if (!s || !Array.isArray(s.tokens)) continue;
+      for (const tok of s.tokens) {
+        if (!tok) continue;
+        const v = tok.value;
+        if (typeof v === 'object' && v !== null) pushHit(i, sideKey, tok);
+      }
+    }
+  }
+  return hits;
+}
+
+
+function _tTokenArray(tokens) {
+  if (tokens == null) return [];
+  if (Array.isArray(tokens)) return tokens;
+  if (typeof tokens === 'string') return [{ value: tokens }];
+  if (typeof tokens === 'object') {
+    if ('value' in tokens) return [tokens];
+    // fallback: stringify object safely
+    try { return [{ value: JSON.stringify(tokens) }]; } catch (e) { return [{ value: String(tokens) }]; }
+  }
+  return [{ value: String(tokens) }];
+}
+
+
+function _tAssertNoObjectObjectInRendered(rows, name) {
+  const bad = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const a = rowToHtml(r.a);
+    const b = rowToHtml(r.b);
+    if (a.includes('[object Object]') || b.includes('[object Object]')) {
+      bad.push({ row: i + 1, a, b });
+    }
+  }
+  _tAssert(bad.length === 0, `${name}: rendered contains "[object Object]" at rows: ` + bad.map(x => x.row).join(','));
+}
 function _isNewlineOnlyRow(row) {
   const aLen = row.a.tokens.length;
   const bLen = row.b.tokens.length;
@@ -2685,7 +3203,235 @@ function test_compaction_no_double_empty_after_newline_only() {
 
 // --- 実行 -------------------------------------------------------------
 
+function test_hybrid_prefers_line_on_repeated_similar_lines() {
+  // ユーザーが報告したタイプ：似た行が並ぶ（全文トークンLCSだと行対応が壊れやすい）
+  const A = [
+    "AAAAAAAAAAAAAAA     B9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     A9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     B9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     C9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     D9*************** AAAAAAA32"
+  ].join("\n");
+
+  const B = [
+    "AAAAAAAAAAAAAAA     B9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     B9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     C9*************** AAAAAAA32",
+    "CAAAAAAAAAAAAAA     D9*************** AAAAAAA32"
+  ].join("\n");
+
+  const r = computeHybridRows(A, B);
+  _tEq(r.method, 'line', "Hybrid should prefer line-based for repeated similar lines");
+}
+
+function test_hybrid_returns_rows_and_scores() {
+  const A = "X\n\nY";
+  const B = "X\nY";
+  const r = computeHybridRows(A, B);
+
+  _tAssert(!!r && Array.isArray(r.rows), "Hybrid result must contain rows[]");
+  _tAssert(r.method === 'line' || r.method === 'chars', "Hybrid result must contain method");
+  _tAssert(!!r.scores && !!r.scores.line && !!r.scores.chars, "Hybrid result must contain scores");
+  _tAssert(typeof r.scores.line.score === 'number', "scores.line.score must be number");
+  _tAssert(typeof r.scores.chars.score === 'number', "scores.chars.score must be number");
+}
+
+function test_scoreRows_penalizes_newline_only_more_than_empty_side() {
+  // ニューライン-onlyが強く罰則になる設計かを検証（スコアの相対関係）
+  const rows1 = [
+    { a: { tokens: [{ type: 'newline-delete', value: '↵' }] }, b: { tokens: [] } }
+  ];
+  const rows2 = [
+    { a: { tokens: [{ type: 'delete', value: 'X' }] }, b: { tokens: [] } }
+  ];
+  const s1 = scoreRowsForDisplay(rows1);
+  const s2 = scoreRowsForDisplay(rows2);
+
+  _tAssert(s1.score > s2.score, "newline-only should be penalized more than simple empty-side");
+}
+
+function test_chars_repair_does_not_split_it_will_by_newline_move() {
+  // A: 空行を "If I put..." の前に入れる
+  // B: 空行を "If I put..." の後に入れる
+  const A = [
+    "Betty Botter bought some butter,",
+    "But, she said, this butter's bitter;",
+    "",
+    "If I put it in my batter,",
+    "It will make my batter bitter,"
+  ].join("\n");
+
+  const B = [
+    "Betty Botter bought some butter,",
+    "But, she said, the butter's bitter;",
+    "If I put it in my batter,",
+    "",
+    "That will make my batter bitter."
+  ].join("\n");
+
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  let rows = renderDiff(diff);
+  rows = repairMidlineNewlineRows(rows);
+
+  // 期待： "It" だけの行が出て、その直後に " will" で始まる行が出る、という壊れ方がないこと
+  let bad = false;
+  for (let i = 0; i + 1 < rows.length; i++) {
+    const a0 = rows[i].a.tokens.map(t => t.value).join('');
+    const a1 = rows[i + 1].a.tokens.map(t => t.value).join('');
+    if (a0 === 'It' && a1.startsWith(' will')) {
+      bad = true;
+      break;
+    }
+  }
+  _tAssert(!bad, "Chars diff should not split 'It will' across rows due to moved blank line");
+}
+
+
+function test_line_replace_block_alignment() {
+  _tLogStart("test_line_replace_block_alignment");
+
+  const A =
+"    from: { row: 1, column: 1 },\n" +
+"    to: { row: 1, column: 6 }\n" +
+"  };\n" +
+"  \n" +
+"  // 色定義\n" +
+"  const colors = {\n" +
+"    delete: { font: 'FFCC0000', bg: 'FFFFD9D9' },\n" +
+"    insert: { font: 'FF006600', bg: 'FFD9FFD9' },\n" +
+"    newline: { font: 'FF996600', bg: 'FFFFF0D9' }\n" +
+"  };\n";
+
+  const B =
+"    from: { row: 1, column: 1 },\n" +
+"    to: { row: 1, column: 6 }\n" +
+"  };\n" +
+"  \n" +
+"  // 色定義（削除・挿入ともに赤）\n" +
+"  const colors = {\n" +
+"    delete: { font: 'FFFF0000', bg: 'FFFFD9D9' },\n" +
+"    insert: { font: 'FFFF0000', bg: 'FFFFD9D9' },\n" +
+"    newline: { font: 'FF996600', bg: 'FFFFF0D9' }\n" +
+"  };\n";
+
+  const rows = buildRowsByLines(A, B);
+
+  // 期待:
+  // - "delete:" 行は A/B 両方に存在するので、片側emptyにならない（置換行）
+  // - "insert:" 行も同様
+  // 旧バグでは delete 行が Aのみ、insert 行が Bのみ になりがち
+  const hasDeleteReplace = rows.some(r => !r.a.isEmpty && !r.b.isEmpty &&
+    _tTokenArray(r.a.tokens).some(t => t.value && t.value.includes("delete:")) &&
+    _tTokenArray(r.b.tokens).some(t => t.value && t.value.includes("delete:"))
+  );
+  const hasInsertReplace = rows.some(r => !r.a.isEmpty && !r.b.isEmpty &&
+    _tTokenArray(r.a.tokens).some(t => t.value && t.value.includes("insert:")) &&
+    _tTokenArray(r.b.tokens).some(t => t.value && t.value.includes("insert:"))
+  );
+
+  _tAssert(hasDeleteReplace, '[TEST] Expected "delete:" line to be aligned as a replace-row (both sides non-empty)');
+  _tAssert(hasInsertReplace, '[TEST] Expected "insert:" line to be aligned as a replace-row (both sides non-empty)');
+
+  _tLogOk("test_line_replace_block_alignment");
+}
+
+
+function test_hybrid_align_shifted_similar_lines() {
+  _tLogTestStart("Hybrid: align shifted similar lines (But a bit...)");
+
+  const A = [
+    "If I put it in my batter,",
+    "It will make my batter bitter,",
+    "But a bit of better butter",
+    "Will make my batter better."
+  ].join("\n");
+
+  const B = [
+    "If I put it in my batter,",
+    "That will make my batter bitter.",
+    "But a bit of better butter,",
+    "That will make my batter better."
+  ].join("\n");
+
+  const rows = computeHybridRows(A, B);
+
+  // Expect to find a row where BOTH sides contain "But a bit of better butter"
+  let ok = false;
+  for (const r of rows) {
+    const a = (r.a && r.a.rawLine != null) ? String(r.a.rawLine) : tokensToPlainText(r.a.tokens || []);
+    const b = (r.b && r.b.rawLine != null) ? String(r.b.rawLine) : tokensToPlainText(r.b.tokens || []);
+    if (a.includes("But a bit of better butter") && b.includes("But a bit of better butter")) { ok = true; break; }
+  }
+  _tAssert(ok, '[TEST] Expected "But a bit of better butter" to align in the same row (A and B).');
+
+  _tLogTestPass("Hybrid: align shifted similar lines (But a bit...)");
+}
+
+
+
+function test_no_object_object_in_line_and_hybrid() {
+  const t0 = _tLogStart('no [object Object] in line/hybrid');
+
+  const A = `下記の文章を比較してください。
+   Betty Botter bought some butter, 
+But, she said, this butter's bitter;
+
+If I put it in my batter,
+It will make my batter bitter,
+But a bit of better butter
+Will make my batter better.
+So she bought a bit of butter
+Better than her bitter butter,
+And she put it in her batter,
+And it made her batter better,
+So 'twas better Betty Botter
+Bought a bit of better butter.`;
+
+  const B = `下記の文章を，ﾋﾋ較してくだちい．
+Betty Botter bought some butter,
+But, she said, the butter's bitter;
+If I put it in my batter,
+
+That will make my batter bitter.
+But a bit of better butter, 
+That will make my batter better.
+So she bought a bit of butter
+Better than her bitter butter.
+And she put it in her batter,
+And it made her batter better.
+So it was better Betty Botter
+Bought a bit of better butter.`;
+
+  // 行比較
+  const linesA = splitLinesKeepEmpty(A).map(toPlainString);
+  const linesB = splitLinesKeepEmpty(B).map(toPlainString);
+  const rowsLine = buildRowsByLines(linesA, linesB);
+  _normalizeRowsTokens(rowsLine);
+
+  const hitsLine = _tFindNonStringTokenValues(rowsLine);
+  if (hitsLine.length) {
+    console.warn('[TEST] non-string token values (line):', hitsLine.slice(0, 20));
+  }
+  _tAssert(hitsLine.length === 0, 'line: found non-string token values');
+  _tAssertNoObjectObjectInRendered(rowsLine, 'line');
+
+  // ハイブリッド比較（内部ロジックを直接）
+  const rowsHybrid = computeHybridRows(linesA, linesB);
+  _normalizeRowsTokens(rowsHybrid);
+
+  const hitsHybrid = _tFindNonStringTokenValues(rowsHybrid);
+  if (hitsHybrid.length) {
+    console.warn('[TEST] non-string token values (hybrid):', hitsHybrid.slice(0, 20));
+  }
+  _tAssert(hitsHybrid.length === 0, 'hybrid: found non-string token values');
+  _tAssertNoObjectObjectInRendered(rowsHybrid, 'hybrid');
+
+  _tLogEnd(t0);
+}
+
 function runAllTests() {
+  test_line_replace_block_alignment();
+
   const tests = [
     test_basic_no_diff_single_line,
     test_equal_newline_creates_empty_row,
@@ -2693,7 +3439,12 @@ function runAllTests() {
     test_newline_only_row_when_a_has_extra_blank_line,
     test_it_not_split_by_fake_newline,
     test_punctuation_not_forced_to_next_line,
-    test_compaction_no_double_empty_after_newline_only
+    test_compaction_no_double_empty_after_newline_only,
+    test_hybrid_prefers_line_on_repeated_similar_lines,
+    test_hybrid_align_shifted_similar_lines,
+    test_hybrid_returns_rows_and_scores,
+    test_scoreRows_penalizes_newline_only_more_than_empty_side,
+    test_chars_repair_does_not_split_it_will_by_newline_move
   ];
 
   const started = performance.now();
