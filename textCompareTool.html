@@ -3372,8 +3372,12 @@ function test_hybrid_align_shifted_similar_lines() {
   // Expect to find a row where BOTH sides contain "But a bit of better butter"
   let ok = false;
   for (const r of rows) {
-    const a = (r.a && r.a.rawLine != null) ? String(r.a.rawLine) : tokensToPlainText(r.a.tokens || []);
-    const b = (r.b && r.b.rawLine != null) ? String(r.b.rawLine) : tokensToPlainText(r.b.tokens || []);
+    const a = (r.a && r.a.rawLine != null)
+      ? String(r.a.rawLine)
+      : _tTokenArray(r.a.tokens).map(t => t.value || '').join('');
+    const b = (r.b && r.b.rawLine != null)
+      ? String(r.b.rawLine)
+      : _tTokenArray(r.b.tokens).map(t => t.value || '').join('');
     if (a.includes("But a bit of better butter") && b.includes("But a bit of better butter")) { ok = true; break; }
   }
   _tAssert(ok, '[TEST] Expected "But a bit of better butter" to align in the same row (A and B).');
