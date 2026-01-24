@@ -1452,10 +1452,14 @@ function buildRowsByLines(textA, textB) {
     const insBlock = [];
     let j = i;
     while (j < lineDiff.length && (lineDiff[j].type === 'delete' || lineDiff[j].type === 'insert')) {
-      if (lineDiff[j].type === 'delete') if (lineDiff[j].value !== '
-') delBlock.push(toPlainString(lineDiff[j].value));
-      else if (lineDiff[j].value !== '
-') insBlock.push(toPlainString(lineDiff[j].value));
+      const entry = lineDiff[j];
+      if (entry.value !== '\n') {
+        if (entry.type === 'delete') {
+          delBlock.push(toPlainString(entry.value));
+        } else if (entry.type === 'insert') {
+          insBlock.push(toPlainString(entry.value));
+        }
+      }
       j++;
     }
 
