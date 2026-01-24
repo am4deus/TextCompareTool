@@ -970,6 +970,7 @@ footer a:hover {
     <button class="btn-secondary" onclick="clearAll()">クリア</button>
     <button class="btn-secondary" onclick="loadSample()">サンプル</button>
     <button class="btn-secondary" onclick="loadSample2()">サンプル2</button>
+    <button class="btn-secondary" onclick="loadSample3()">サンプル3</button>
     <div class="theme-selector">
       <button class="theme-btn dark" onclick="setTheme('dark')" title="ダーク"></button>
       <button class="theme-btn light active" onclick="setTheme('light')" title="ライト"></button>
@@ -1452,8 +1453,11 @@ function buildRowsByLines(textA, textB) {
     const insBlock = [];
     let j = i;
     while (j < lineDiff.length && (lineDiff[j].type === 'delete' || lineDiff[j].type === 'insert')) {
-      if (lineDiff[j].type === 'delete') if (lineDiff[j].value !== '\n') delBlock.push(toPlainString(lineDiff[j].value));
-      else if (lineDiff[j].value !== '\n') insBlock.push(toPlainString(lineDiff[j].value));
+      if (lineDiff[j].type === 'delete') {
+        if (lineDiff[j].value !== '\n') delBlock.push(toPlainString(lineDiff[j].value));
+      } else if (lineDiff[j].type === 'insert') {
+        if (lineDiff[j].value !== '\n') insBlock.push(toPlainString(lineDiff[j].value));
+      }
       j++;
     }
 
@@ -1483,8 +1487,7 @@ function buildRowsByLines(textA, textB) {
         }
 
         const tokenDiff = generateDiff(tokenize(aLine), tokenize(bLine));
-        const aTokens = diffTokensToRowTokens(tokenDiff, 'delete');
-        const bTokens = diffTokensToRowTokens(tokenDiff, 'insert');
+        const { aTokens, bTokens } = diffTokensToRowTokens(tokenDiff);
 
         pushRow(aTokens, bTokens);
       }
@@ -1503,7 +1506,151 @@ function buildRowsByLines(textA, textB) {
     i = j - 1;
   }
 
-  return rows;
+  return repairShiftedEqualLineRows(rows);
+}
+
+// 行比較で「同一行が空行差分を挟んでズレて表示される」ケースを補正
+function repairShiftedEqualLineRows(rows) {
+  function rowText(tokens) {
+    if (!tokens || !tokens.length) return '';
+    return tokens.map(t => t.value || '').join('');
+  }
+
+  function isNewlineOnlyRow(r) {
+    const aLen = r.a.tokens.length;
+    const bLen = r.b.tokens.length;
+    const aNewlineOnly = (aLen === 1 && r.a.tokens[0].type && String(r.a.tokens[0].type).startsWith('newline') && bLen === 0);
+    const bNewlineOnly = (bLen === 1 && r.b.tokens[0].type && String(r.b.tokens[0].type).startsWith('newline') && aLen === 0);
+    return aNewlineOnly || bNewlineOnly;
+  }
+
+  function isSpacerRow(r) {
+    if (isNewlineOnlyRow(r)) return true;
+    return rowText(r.a.tokens) === '' && rowText(r.b.tokens) === '';
+  }
+
+  function isSideOnly(r, side) {
+    const aEmpty = r.a.tokens.length === 0;
+    const bEmpty = r.b.tokens.length === 0;
+    if (side === 'a') return !aEmpty && bEmpty;
+    return !bEmpty && aEmpty;
+  }
+
+  function isEqualRow(r) {
+    if (!r || !r.a || !r.b) return false;
+    if (r.a.tokens.length === 0 || r.b.tokens.length === 0) return false;
+    return rowText(r.a.tokens) === rowText(r.b.tokens);
+  }
+
+  const out = rows.slice();
+  function allSpacersBetween(start, end) {
+    for (let k = start + 1; k < end; k++) {
+      if (!isSpacerRow(out[k])) return false;
+    }
+    return true;
+  }
+
+  function createNewlineRow(side) {
+    const row = { a: { tokens: [], isEmpty: true }, b: { tokens: [], isEmpty: true } };
+    if (side === 'a') {
+      row.a.tokens = [{ type: 'newline-delete', value: '↵' }];
+      row.a.isEmpty = false;
+    } else {
+      row.b.tokens = [{ type: 'newline-insert', value: '↵' }];
+      row.b.isEmpty = false;
+    }
+    return row;
+  }
+
+  function markSpacersBetween(start, end, primarySide) {
+    const spacerIndices = [];
+    for (let k = start + 1; k < end; k++) {
+      if (isSpacerRow(out[k])) spacerIndices.push(k);
+    }
+    if (!spacerIndices.length) return;
+
+    for (const idx of spacerIndices) {
+      if (isNewlineOnlyRow(out[idx])) continue;
+      if (primarySide === 'a') {
+        out[idx] = createNewlineRow('a');
+      } else {
+        out[idx] = createNewlineRow('b');
+      }
+    }
+
+    if (spacerIndices.length === 1) {
+      const oppositeSide = primarySide === 'a' ? 'b' : 'a';
+      const insertAt = spacerIndices[0] + 1;
+      out.splice(insertAt, 0, createNewlineRow(oppositeSide));
+    }
+  }
+
+  for (let i = 0; i < out.length; i++) {
+    const row = out[i];
+    if (!row || !row.a || !row.b) continue;
+
+    if (isSideOnly(row, 'a')) {
+      const aText = rowText(row.a.tokens);
+      if (!aText) continue;
+      let merged = false;
+      for (let j = i - 1; j >= 0 && j >= i - 3; j--) {
+        if (!allSpacersBetween(j, i)) continue;
+        if (isEqualRow(out[j]) && rowText(out[j].a.tokens) === aText) {
+          markSpacersBetween(j, i, 'a');
+          out.splice(i, 1);
+          i--;
+          merged = true;
+          break;
+        }
+      }
+      if (merged) continue;
+      for (let j = i + 1; j < out.length && j <= i + 3; j++) {
+        const candidate = out[j];
+        if (!candidate) continue;
+        if (!allSpacersBetween(i, j)) continue;
+        if (isSideOnly(candidate, 'b') && rowText(candidate.b.tokens) === aText) {
+          row.a.tokens = [{ type: 'equal', value: aText }];
+          row.b.tokens = [{ type: 'equal', value: aText }];
+          row.a.isEmpty = false;
+          row.b.isEmpty = false;
+          markSpacersBetween(i, j, 'a');
+          out.splice(j, 1);
+          break;
+        }
+      }
+    } else if (isSideOnly(row, 'b')) {
+      const bText = rowText(row.b.tokens);
+      if (!bText) continue;
+      let merged = false;
+      for (let j = i - 1; j >= 0 && j >= i - 3; j--) {
+        if (!allSpacersBetween(j, i)) continue;
+        if (isEqualRow(out[j]) && rowText(out[j].b.tokens) === bText) {
+          markSpacersBetween(j, i, 'b');
+          out.splice(i, 1);
+          i--;
+          merged = true;
+          break;
+        }
+      }
+      if (merged) continue;
+      for (let j = i + 1; j < out.length && j <= i + 3; j++) {
+        const candidate = out[j];
+        if (!candidate) continue;
+        if (!allSpacersBetween(i, j)) continue;
+        if (isSideOnly(candidate, 'a') && rowText(candidate.a.tokens) === bText) {
+          row.a.tokens = [{ type: 'equal', value: bText }];
+          row.b.tokens = [{ type: 'equal', value: bText }];
+          row.a.isEmpty = false;
+          row.b.isEmpty = false;
+          markSpacersBetween(i, j, 'b');
+          out.splice(j, 1);
+          break;
+        }
+      }
+    }
+  }
+
+  return out;
 }
 
 
@@ -2262,6 +2409,14 @@ CAAAAAAAAAAAAAA     D9*************** AAAAAAA32`;
   document.getElementById('textA').value = a;
   document.getElementById('textB').value = b;
   // すぐ比較したい場合は次を有効化（現状は入力だけ）
+  compareHybrid();
+}
+
+function loadSample3() {
+  const a = `    from: { row: 1, column: 1 },\n    to: { row: 1, column: 6 }\n  };\n  \n  // 色定義\n  const colors = {\n    delete: { font: 'FFCC0000', bg: 'FFFFD9D9' },\n    insert: { font: 'FF006600', bg: 'FFD9FFD9' },\n    newline: { font: 'FF996600', bg: 'FFFFF0D9' }\n  };\n  \n  // 比較結果を追加\n`;
+  const b = `    from: { row: 1, column: 1 },\n    to: { row: 1, column: 6 }\n  };\n  \n  // 色定義（削除・挿入ともに赤）\n  const colors = {\n    delete: { font: 'FFFF0000', bg: 'FFFFD9D9' },\n    insert: { font: 'FFFF0000', bg: 'FFFFD9D9' },\n    newline: { font: 'FF996600', bg: 'FFFFF0D9' }\n  };\n  \n`;
+  document.getElementById('textA').value = a;
+  document.getElementById('textB').value = b;
   compareHybrid();
 }
 
@@ -3286,7 +3441,7 @@ function test_chars_repair_does_not_split_it_will_by_newline_move() {
 
 
 function test_line_replace_block_alignment() {
-  _tLogStart("test_line_replace_block_alignment");
+  const t0 = _tLogStart("test_line_replace_block_alignment");
 
   const A =
 "    from: { row: 1, column: 1 },\n" +
@@ -3318,24 +3473,28 @@ function test_line_replace_block_alignment() {
   // - "delete:" 行は A/B 両方に存在するので、片側emptyにならない（置換行）
   // - "insert:" 行も同様
   // 旧バグでは delete 行が Aのみ、insert 行が Bのみ になりがち
-  const hasDeleteReplace = rows.some(r => !r.a.isEmpty && !r.b.isEmpty &&
-    _tTokenArray(r.a.tokens).some(t => t.value && t.value.includes("delete:")) &&
-    _tTokenArray(r.b.tokens).some(t => t.value && t.value.includes("delete:"))
-  );
-  const hasInsertReplace = rows.some(r => !r.a.isEmpty && !r.b.isEmpty &&
-    _tTokenArray(r.a.tokens).some(t => t.value && t.value.includes("insert:")) &&
-    _tTokenArray(r.b.tokens).some(t => t.value && t.value.includes("insert:"))
-  );
+  const hasDeleteReplace = rows.some(r => {
+    if (r.a.isEmpty || r.b.isEmpty) return false;
+    const aText = _tTokenArray(r.a.tokens).map(t => t.value || '').join('');
+    const bText = _tTokenArray(r.b.tokens).map(t => t.value || '').join('');
+    return aText.includes("delete:") && bText.includes("delete:");
+  });
+  const hasInsertReplace = rows.some(r => {
+    if (r.a.isEmpty || r.b.isEmpty) return false;
+    const aText = _tTokenArray(r.a.tokens).map(t => t.value || '').join('');
+    const bText = _tTokenArray(r.b.tokens).map(t => t.value || '').join('');
+    return aText.includes("insert:") && bText.includes("insert:");
+  });
 
   _tAssert(hasDeleteReplace, '[TEST] Expected "delete:" line to be aligned as a replace-row (both sides non-empty)');
   _tAssert(hasInsertReplace, '[TEST] Expected "insert:" line to be aligned as a replace-row (both sides non-empty)');
 
-  _tLogOk("test_line_replace_block_alignment");
+  _tLogEnd(t0);
 }
 
 
 function test_hybrid_align_shifted_similar_lines() {
-  _tLogTestStart("Hybrid: align shifted similar lines (But a bit...)");
+  const t0 = _tLogStart("Hybrid: align shifted similar lines (But a bit...)");
 
   const A = [
     "If I put it in my batter,",
@@ -3351,18 +3510,23 @@ function test_hybrid_align_shifted_similar_lines() {
     "That will make my batter better."
   ].join("\n");
 
-  const rows = computeHybridRows(A, B);
+  const result = computeHybridRows(A, B);
+  const rows = result.rows || [];
 
   // Expect to find a row where BOTH sides contain "But a bit of better butter"
   let ok = false;
   for (const r of rows) {
-    const a = (r.a && r.a.rawLine != null) ? String(r.a.rawLine) : tokensToPlainText(r.a.tokens || []);
-    const b = (r.b && r.b.rawLine != null) ? String(r.b.rawLine) : tokensToPlainText(r.b.tokens || []);
+    const a = (r.a && r.a.rawLine != null)
+      ? String(r.a.rawLine)
+      : _tTokenArray(r.a.tokens).map(t => t.value || '').join('');
+    const b = (r.b && r.b.rawLine != null)
+      ? String(r.b.rawLine)
+      : _tTokenArray(r.b.tokens).map(t => t.value || '').join('');
     if (a.includes("But a bit of better butter") && b.includes("But a bit of better butter")) { ok = true; break; }
   }
   _tAssert(ok, '[TEST] Expected "But a bit of better butter" to align in the same row (A and B).');
 
-  _tLogTestPass("Hybrid: align shifted similar lines (But a bit...)");
+  _tLogEnd(t0);
 }
 
 
@@ -3492,5 +3656,4 @@ window.runAllTests = runAllTests;
 
 </script>
 </body>
-</html>  test_no_object_object_in_line_and_hybrid();
-
+</html>
