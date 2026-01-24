@@ -962,7 +962,9 @@ footer a:hover {
   </div>
 
   <div class="actions">
-    <button class="btn-primary" onclick="compare()">比較する (Ctrl+Enter)</button>
+    <button class="btn-primary" onclick="compareHybrid()">ハイブリッド比較 (Ctrl+Enter)</button>
+    <button class="btn-secondary" onclick="compareLine()">行比較</button>
+    <button class="btn-secondary" onclick="compareChars()">文字比較</button>
     <button class="btn-secondary btn-icon" onclick="swapTexts()" title="左右入れ替え">⇄<span>入替</span></button>
     <button class="btn-secondary" onclick="clearAll()">クリア</button>
     <button class="btn-secondary" onclick="loadSample()">サンプル</button>
@@ -1133,7 +1135,11 @@ function tokenize(text) {
       tokens.push('\n');
       i++;
     }
-    // その他の文字（日本語含む）
+        // CRは無視（念のため）
+    else if (text[i] === '\r') {
+      i++;
+    }
+// その他の文字（日本語含む）
     else {
       tokens.push(text[i]);
       i++;
@@ -1191,6 +1197,129 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
+
+// 行分割（末尾改行も保持: "a\n" -> ["a",""]）
+function splitLinesKeepEmpty(text) {
+  // ここでは compare() で改行正規化済み（\r除去）を前提
+  // splitは末尾が"\n"なら最後に空要素を作るので、そのまま利用する
+  return text.split('\n');
+}
+
+// token diff の結果（equal/delete/insert）を「1行分のA/Bトークン」に変換
+function diffTokensToRowTokens(diffTokens) {
+  const aTokens = [];
+  const bTokens = [];
+  for (const d of diffTokens) {
+    if (d.type === 'equal') {
+      aTokens.push({ type: 'equal', value: d.value });
+      bTokens.push({ type: 'equal', value: d.value });
+    } else if (d.type === 'delete') {
+      aTokens.push({ type: 'delete', value: d.value });
+    } else if (d.type === 'insert') {
+      bTokens.push({ type: 'insert', value: d.value });
+    }
+  }
+  return { aTokens, bTokens };
+}
+
+// テキスト全体を「行単位」でLCS差分 → 行ごとに（必要なら行内も）差分化して rows を作る
+function buildRowsByLines(textA, textB) {
+  const rows = [];
+  const linesA = splitLinesKeepEmpty(textA);
+  const linesB = splitLinesKeepEmpty(textB);
+
+  // まず行単位の差分
+  const lineDiff = generateDiff(linesA, linesB);
+
+  function pushRow(aTokens, bTokens) {
+    rows.push({
+      a: { tokens: aTokens, isEmpty: aTokens.length === 0 },
+      b: { tokens: bTokens, isEmpty: bTokens.length === 0 }
+    });
+  }
+
+  for (let i = 0; i < lineDiff.length; ) {
+    const cur = lineDiff[i];
+    const next = (i + 1 < lineDiff.length) ? lineDiff[i + 1] : null;
+
+    // delete + insert の並びは「同一行の置換」として扱う（行内差分を出す）
+    if (cur.type === 'delete' && next && next.type === 'insert') {
+      const aLine = cur.value;
+      const bLine = next.value;
+
+      // 両方空（理論上ほぼ出ないが保険）→ 空行として1行
+      if (aLine === '' && bLine === '') {
+        pushRow([], []);
+        i += 2;
+        continue;
+      }
+
+      // 片側だけ空行なら、改行差分（↵行）に寄せる
+      if (aLine === '' && bLine !== '') {
+        // B側が「行を追加」した（空行→文字列）は、B側insert行として表示
+        const diffTokens = generateDiff(tokenize(aLine), tokenize(bLine));
+        const { aTokens, bTokens } = diffTokensToRowTokens(diffTokens);
+        pushRow(aTokens, bTokens);
+        i += 2;
+        continue;
+      }
+      if (aLine !== '' && bLine === '') {
+        const diffTokens = generateDiff(tokenize(aLine), tokenize(bLine));
+        const { aTokens, bTokens } = diffTokensToRowTokens(diffTokens);
+        pushRow(aTokens, bTokens);
+        i += 2;
+        continue;
+      }
+
+      // 通常: 行内差分
+      const diffTokens = generateDiff(tokenize(aLine), tokenize(bLine));
+      const { aTokens, bTokens } = diffTokensToRowTokens(diffTokens);
+      pushRow(aTokens, bTokens);
+
+      i += 2;
+      continue;
+    }
+
+    if (cur.type === 'equal') {
+      // 空行（= 連続改行）も「1行」として出す
+      if (cur.value === '') {
+        pushRow([], []);
+      } else {
+        pushRow([{ type: 'equal', value: cur.value }], [{ type: 'equal', value: cur.value }]);
+      }
+      i++;
+      continue;
+    }
+
+    if (cur.type === 'delete') {
+      // A側だけに空行が存在（= A側に改行が1つ多い）→ ↵行として出す
+      if (cur.value === '') {
+        pushRow([{ type: 'newline-delete', value: '↵' }], []);
+      } else {
+        pushRow([{ type: 'delete', value: cur.value }], []);
+      }
+      i++;
+      continue;
+    }
+
+    if (cur.type === 'insert') {
+      // B側だけに空行が存在（= B側に改行が1つ多い）→ ↵行として出す
+      if (cur.value === '') {
+        pushRow([], [{ type: 'newline-insert', value: '↵' }]);
+      } else {
+        pushRow([], [{ type: 'insert', value: cur.value }]);
+      }
+      i++;
+      continue;
+    }
+
+    // 不明タイプ（保険）
+    i++;
+  }
+
+  return rows;
+}
+
 
 // 差分を行ごとにレンダリング
 function renderDiff(diff) {
@@ -1430,25 +1559,29 @@ function toggleResultOnly() {
 }
 
 // メイン比較関数
-function compare() {
-  const textA = document.getElementById('textA').value;
-  const textB = document.getElementById('textB').value;
-  
-  const tokensA = tokenize(textA);
-  const tokensB = tokenize(textB);
-  
-  const diff = generateDiff(tokensA, tokensB);
-  const rows = renderDiff(diff);
+function compareLine() {
+  let textA = document.getElementById('textA').value;
+  let textB = document.getElementById('textB').value;
+
+  // 改行コード正規化（WindowsのCRLF/CRをLFに統一）
+  textA = textA.replace(/\r\n?/g, '\n');
+  textB = textB.replace(/\r\n?/g, '\n');
+const rows = buildRowsByLines(textA, textB);
+
+  // line-based diff でも統計用に diff 相当（差分有無判定）を作る
+  const hasDiff = rows.some(r => r.a.tokens.some(t => t.type !== 'equal') || r.b.tokens.some(t => t.type !== 'equal'));
+// Excelダウンロード用に保存
+  lastDiffRows = rows;
   
   // Excelダウンロード用に保存
   lastDiffRows = rows;
-  
+
+  renderComparisonRows(rows, textA, textB, hasDiff);
+}
+
+function renderComparisonRows(rows, textA, textB, hasDiff) {
   const tbody = document.getElementById('diffBody');
   tbody.innerHTML = '';
-  
-  // 差分があるかチェック
-  const hasDiff = diff.some(d => d.type !== 'equal');
-  
   // 差分カウント用
   let deleteCount = 0;
   let insertCount = 0;
@@ -1547,7 +1680,106 @@ function compare() {
   document.getElementById('results').classList.toggle('diff-only-mode', onlyDiffMode);
   updateDiffOnlyButton();
   document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
 }
+
+
+
+// 互換: 既存の呼び出し（Ctrl+Enter等）は compare() を使う場合があるので、行比較へ委譲
+function compare() {
+  return compareHybrid();
+}
+
+// 旧方式: 文字（トークン列）単位の比較
+function compareChars() {
+  let textA = document.getElementById('textA').value;
+  let textB = document.getElementById('textB').value;
+
+  // 改行コード正規化（WindowsのCRLF/CRをLFに統一）
+  textA = textA.replace(/\r\n?/g, '\n');
+  textB = textB.replace(/\r\n?/g, '\n');
+
+  const tokensA = tokenize(textA);
+  const tokensB = tokenize(textB);
+  const diff = generateDiff(tokensA, tokensB);
+  const rows = renderDiff(diff);
+
+  // 差分があるか（行単位の表示でも判定は rows で十分）
+  const hasDiff = rows.some(r => r.a.tokens.some(t => t.type !== 'equal') || r.b.tokens.some(t => t.type !== 'equal'));
+
+  // Excelダウンロード用に保存
+  lastDiffRows = rows;
+
+  // ここからは compareLine() と同じ描画処理
+  renderComparisonRows(rows, textA, textB, hasDiff);
+}
+
+// 行比較と文字比較を両方走らせ、表示が「崩れて見える」方を避けるハイブリッド
+function scoreRowsForDisplay(rows) {
+  let newlineOnly = 0;
+  let emptySide = 0;
+  let bothEmpty = 0;
+  let total = rows.length;
+
+  for (const r of rows) {
+    const aEmpty = r.a.tokens.length === 0;
+    const bEmpty = r.b.tokens.length === 0;
+
+    if (aEmpty && bEmpty) bothEmpty++;
+
+    // newline-only（↵だけの行）
+    const aLen = r.a.tokens.length;
+    const bLen = r.b.tokens.length;
+    const aNL = (aLen === 1 && r.a.tokens[0].type && String(r.a.tokens[0].type).startsWith('newline') && bLen === 0);
+    const bNL = (bLen === 1 && r.b.tokens[0].type && String(r.b.tokens[0].type).startsWith('newline') && aLen === 0);
+    if (aNL || bNL) newlineOnly++;
+
+    // empty-cell（片側が空） ※newline-onlyは別で強めに罰則を入れるので、ここでは重複カウントOK
+    if (aEmpty !== bEmpty) emptySide++;
+  }
+
+  // 重み：newline-only が一番「壊れて見える」ので強め
+  // totalRows も少しだけ入れて、無駄に分割が多い表示を避ける
+  const score = (newlineOnly * 8) + (emptySide * 3) + (total * 0.2) + (bothEmpty * 0.5);
+  return { score, newlineOnly, emptySide, bothEmpty, total };
+}
+
+function compareHybrid() {
+  let textA = document.getElementById('textA').value;
+  let textB = document.getElementById('textB').value;
+
+  // 改行コード正規化（WindowsのCRLF/CRをLFに統一）
+  textA = textA.replace(/\r\n?/g, '\n');
+  textB = textB.replace(/\r\n?/g, '\n');
+
+  // 1) 行比較
+  const rowsLine = buildRowsByLines(textA, textB);
+
+  // 2) 文字比較（トークン列）→ 行分割
+  const diffChars = generateDiff(tokenize(textA), tokenize(textB));
+  const rowsChars = renderDiff(diffChars);
+
+  // 3) スコアで「より自然に見える方」を選ぶ
+  const sLine = scoreRowsForDisplay(rowsLine);
+  const sChars = scoreRowsForDisplay(rowsChars);
+
+  // デバッグしやすいようにコンソールへ
+  console.groupCollapsed('🧩 compareHybrid: scoring');
+  console.log('line', sLine);
+  console.log('chars', sChars);
+  console.groupEnd();
+
+  const useLine = (sLine.score <= sChars.score);
+  const rows = useLine ? rowsLine : rowsChars;
+
+  const hasDiff = rows.some(r => r.a.tokens.some(t => t.type !== 'equal') || r.b.tokens.some(t => t.type !== 'equal'));
+
+  lastDiffRows = rows;
+
+  renderComparisonRows(rows, textA, textB, hasDiff);
+}
+
+
 
 // クリア
 function clearAll() {
@@ -1874,6 +2106,11 @@ async function downloadExcel() {
     { key: 'rawA' },
     { key: 'rawB' }
   ];
+  // 既定フォント（Excel側の見た目統一）
+  for (let c = 1; c <= 12; c++) {
+    ws.getColumn(c).font = { name: 'ＭＳ ゴシック' };
+  }
+
   
   // ヘッダー行
   const headerRow = ws.addRow(['No', 'テキスト A（差分␣/↵表示）', 'テキスト B（差分␣/↵表示）', '一致', 'テキスト A（原文）', 'テキスト B（原文）']);
@@ -1923,6 +2160,24 @@ async function downloadExcel() {
       if (bIsNewlineOnly) {
         excelRow.getCell(2).fill = grayFill; // DiffA
         excelRow.getCell(5).fill = grayFill; // RawA
+      }
+    }
+
+    // empty-cell（片側が空の行）は、UIのグレーアウトをExcelにも反映（行全体ではなく空側のみ）
+    {
+      const grayFill2 = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFA6A6A6' } };
+
+      const aEmpty = row.a.tokens.length === 0;
+      const bEmpty = row.b.tokens.length === 0;
+
+      // 列: 2 DiffA / 3 DiffB / 5 RawA / 6 RawB
+      if (aEmpty && !bEmpty) {
+        excelRow.getCell(2).fill = grayFill2; // DiffA
+        excelRow.getCell(5).fill = grayFill2; // RawA
+      }
+      if (bEmpty && !aEmpty) {
+        excelRow.getCell(3).fill = grayFill2; // DiffB
+        excelRow.getCell(6).fill = grayFill2; // RawB
       }
     }
 
@@ -2443,17 +2698,44 @@ function runAllTests() {
 
   const started = performance.now();
   const results = [];
+
+  console.group('🧪 runAllTests: start');
+  console.log(`tests: ${tests.length}`);
+
   for (const fn of tests) {
     const name = fn.name || '(anonymous)';
+    console.group(`▶ ${name}`);
+    console.log('status: running');
     const t0 = performance.now();
-    fn();
-    const t1 = performance.now();
-    results.push({ name, ms: Math.round((t1 - t0) * 1000) / 1000 });
+    try {
+      fn();
+      const t1 = performance.now();
+      const ms = Math.round((t1 - t0) * 1000) / 1000;
+      results.push({ name, ok: true, ms });
+      console.log(`status: ✅ pass (${ms} ms)`);
+      console.groupEnd();
+    } catch (e) {
+      const t1 = performance.now();
+      const ms = Math.round((t1 - t0) * 1000) / 1000;
+      results.push({ name, ok: false, ms, error: String(e && e.message ? e.message : e) });
+      console.error(`status: ❌ fail (${ms} ms)`);
+      console.error(e);
+      console.groupEnd();
+      console.groupEnd();
+      // 失敗は即停止（原因を最初の1件に絞る）
+      throw e;
+    }
   }
+
   const total = Math.round((performance.now() - started) * 1000) / 1000;
 
-  console.groupCollapsed(`✅ runAllTests: ${results.length} tests passed (${total} ms)`);
-  for (const r of results) console.log(`${r.name}: ${r.ms} ms`);
+  console.groupCollapsed(`✅ runAllTests: all passed (${results.length}/${tests.length}) total=${total} ms`);
+  for (const r of results) {
+    console.log(`${r.ok ? '✅' : '❌'} ${r.name}: ${r.ms} ms`);
+  }
+  console.groupEnd();
+
+  console.log('🧪 runAllTests: done');
   console.groupEnd();
 }
 
