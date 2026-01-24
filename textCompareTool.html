@@ -1197,53 +1197,98 @@ function renderDiff(diff) {
   const rows = [];
   let currentA = [];
   let currentB = [];
-  
-  // 両方に改行が来たときだけflush
-  function flush() {
-    if (currentA.length > 0 || currentB.length > 0) {
-      rows.push({
-        a: { tokens: currentA, isEmpty: currentA.length === 0 },
-        b: { tokens: currentB, isEmpty: currentB.length === 0 }
-      });
+
+  function pushRow(aTokens, bTokens) {
+    rows.push({
+      a: { tokens: aTokens, isEmpty: aTokens.length === 0 },
+      b: { tokens: bTokens, isEmpty: bTokens.length === 0 }
+    });
+  }
+
+  // 現在の行を確定（空行も必要なら forceEmpty=true）
+  function flush(forceEmpty = false) {
+    if (forceEmpty) {
+      pushRow([], []);
+    } else if (currentA.length > 0 || currentB.length > 0) {
+      pushRow(currentA, currentB);
     }
     currentA = [];
     currentB = [];
   }
-  
-  let pendingNewlineA = false;
-  let pendingNewlineB = false;
-  
-  for (const item of diff) {
-    if (item.type === 'equal') {
-      if (item.value === '\n') {
-        // 両方に改行 → 行を確定
-        flush();
-      } else {
-        currentA.push({ type: 'equal', value: item.value });
-        currentB.push({ type: 'equal', value: item.value });
-      }
-    } else if (item.type === 'delete') {
-      if (item.value === '\n') {
-        // Aだけ改行 → 改行マーカーを追加してそのまま続ける
-        currentA.push({ type: 'newline-delete', value: '↵' });
-      } else {
-        currentA.push({ type: 'delete', value: item.value });
-      }
-    } else if (item.type === 'insert') {
-      if (item.value === '\n') {
-        // Bだけ改行 → 改行マーカーを追加してそのまま続ける
-        currentB.push({ type: 'newline-insert', value: '↵' });
-      } else {
-        currentB.push({ type: 'insert', value: item.value });
-      }
+
+  // 片側だけの改行を「改行そのものの行」として出す
+  function emitNewlineOnly(which) {
+    if (which === 'A') {
+      pushRow([{ type: 'newline-delete', value: '↵' }], []);
+    } else {
+      pushRow([], [{ type: 'newline-insert', value: '↵' }]);
     }
   }
-  
-  // 最後の行
-  flush();
-  
-  return rows;
+
+  for (const item of diff) {
+    // === 改行トークンは「その時点で必ず行境界として処理」する ===
+    if (item.value === '\n') {
+      if (item.type === 'equal') {
+        // 両方の改行: 現在行を確定。空なら空行として出す
+        if (currentA.length === 0 && currentB.length === 0) flush(true);
+        else flush(false);
+      } else if (item.type === 'delete') {
+        // Aだけ改行: まず現在行を確定してから、改行行を出す
+        flush(false);
+        emitNewlineOnly('A');
+      } else if (item.type === 'insert') {
+        // Bだけ改行: まず現在行を確定してから、改行行を出す
+        flush(false);
+        emitNewlineOnly('B');
+      }
+      continue;
+    }
+
+    // === 通常トークン ===
+    if (item.type === 'equal') {
+      currentA.push({ type: 'equal', value: item.value });
+      currentB.push({ type: 'equal', value: item.value });
+    } else if (item.type === 'delete') {
+      currentA.push({ type: 'delete', value: item.value });
+    } else if (item.type === 'insert') {
+      currentB.push({ type: 'insert', value: item.value });
+    }
+  }
+
+  // 末尾の残り
+  flush(false);
+
+  // 余計な空行の重複を圧縮：
+  // 「改行差分を1行として出した直後」に「空行(両方空)」が続くケースがあり、
+  // その場合は空行が1つ多く見えるので、後続の空行を削除する。
+  const compacted = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+
+    const aLen = r.a.tokens.length;
+    const bLen = r.b.tokens.length;
+
+    const aNewlineOnly = (aLen === 1 && r.a.tokens[0].type && r.a.tokens[0].type.indexOf('newline-') === 0 && bLen === 0);
+    const bNewlineOnly = (bLen === 1 && r.b.tokens[0].type && r.b.tokens[0].type.indexOf('newline-') === 0 && aLen === 0);
+    const isNewlineOnly = aNewlineOnly || bNewlineOnly;
+
+    const next = (i + 1 < rows.length) ? rows[i + 1] : null;
+    const nextIsBothEmpty = !!next && next.a.tokens.length === 0 && next.b.tokens.length === 0;
+
+    compacted.push(r);
+
+    if (isNewlineOnly && nextIsBothEmpty) {
+      // 次の「両方空行」は視覚的に重複するのでスキップ
+      i++;
+    }
+  }
+
+  return compacted;
+
 }
+
+
+
 
 // 行の内容をHTMLに変換
 function rowToHtml(row) {
@@ -1265,7 +1310,7 @@ function rowToHtml(row) {
         currentType = null;
       }
       // 改行マーカーの後に実際の改行を入れる
-      html += '<span class="newline-marker">' + item.value + '</span>\n';
+      html += '<span class="newline-marker">' + item.value + '</span></span>';
       continue;
     }
     
@@ -1856,8 +1901,31 @@ async function downloadExcel() {
     const hasDiff = row.a.tokens.some(t => t.type === 'delete' || t.type.startsWith('newline')) ||
                     row.b.tokens.some(t => t.type === 'insert' || t.type.startsWith('newline'));
     
-    const excelRow = ws.addRow([index + 1, '', '', !hasDiff, '', '']);
-    
+    const excelRow = ws.addRow([index + 1, '', '', !hasDiff, '', '']);    
+    // 改行差分行（↵だけの行）は、UIのグレーアウトをExcelにも反映
+    // ※ 行全体ではなく、UIで empty-cell になっている「空側」だけをグレーアウトする
+    const aLen = row.a.tokens.length;
+    const bLen = row.b.tokens.length;
+    const aIsNewlineOnly = (aLen === 1 && row.a.tokens[0].type && row.a.tokens[0].type.startsWith('newline') && bLen === 0);
+    const bIsNewlineOnly = (bLen === 1 && row.b.tokens[0].type && row.b.tokens[0].type.startsWith('newline') && aLen === 0);
+
+    if (aIsNewlineOnly || bIsNewlineOnly) {
+      const grayFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFA6A6A6' } };
+
+      // 列: 1 No / 2 DiffA / 3 DiffB / 4 Match / 5 RawA / 6 RawB
+      // Aに↵があってBが空 => B側(DiffB, RawB)をグレー
+      if (aIsNewlineOnly) {
+        excelRow.getCell(3).fill = grayFill; // DiffB
+        excelRow.getCell(6).fill = grayFill; // RawB
+      }
+
+      // Bに↵があってAが空 => A側(DiffA, RawA)をグレー
+      if (bIsNewlineOnly) {
+        excelRow.getCell(2).fill = grayFill; // DiffA
+        excelRow.getCell(5).fill = grayFill; // RawA
+      }
+    }
+
     // No列の書式
     const noCell = excelRow.getCell(1);
     noCell.alignment = { horizontal: 'center' };
@@ -2213,6 +2281,185 @@ document.addEventListener('click', (e) => {
     textPopup.classList.remove('visible');
   }
 });
+
+/* ============================================================================
+ * テストランナー
+ * - runAllTests() を実行すると、主要ロジック（diff→renderDiffの行分割/改行差分/空行圧縮）
+ *   が想定どおり動くかを一括で検証します。
+ * - 失敗したら例外を投げます（コンソールに詳細が出ます）。
+ * ========================================================================== */
+
+function _tAssert(cond, msg) {
+  if (!cond) throw new Error('[TEST] ' + msg);
+}
+
+function _tEq(a, b, msg) {
+  if (a !== b) throw new Error('[TEST] ' + msg + ` (expected=${JSON.stringify(b)} got=${JSON.stringify(a)})`);
+}
+
+function _tJsonEq(a, b, msg) {
+  const sa = JSON.stringify(a);
+  const sb = JSON.stringify(b);
+  if (sa !== sb) throw new Error('[TEST] ' + msg + `\n expected=${sb}\n got     =${sa}`);
+}
+
+// 改行差分行（↵だけの行）の判定（Excel側と同じ条件で揃える）
+function _isNewlineOnlyRow(row) {
+  const aLen = row.a.tokens.length;
+  const bLen = row.b.tokens.length;
+  const aIsNewlineOnly = (aLen === 1 && row.a.tokens[0].type && row.a.tokens[0].type.startsWith('newline') && bLen === 0);
+  const bIsNewlineOnly = (bLen === 1 && row.b.tokens[0].type && row.b.tokens[0].type.startsWith('newline') && aLen === 0);
+  return { aIsNewlineOnly, bIsNewlineOnly, isNewlineOnly: aIsNewlineOnly || bIsNewlineOnly };
+}
+
+// --- 個別テスト -------------------------------------------------------------
+
+function test_basic_no_diff_single_line() {
+  const A = "Hello world";
+  const B = "Hello world";
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  const rows = renderDiff(diff);
+
+  _tEq(rows.length, 1, "No-diff: rows.length should be 1");
+
+  const aLine = rows[0].a.tokens.map(t => t.value).join('');
+  const bLine = rows[0].b.tokens.map(t => t.value).join('');
+
+  _tEq(aLine, A, "No-diff: A line must equal original");
+  _tEq(bLine, B, "No-diff: B line must equal original");
+
+  _tAssert(!_isNewlineOnlyRow(rows[0]).isNewlineOnly, "No-diff: must not be newline-only row");
+}
+
+function test_equal_newline_creates_empty_row() {
+  const A = "A\n\nB";
+  const B = "A\n\nB";
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  const rows = renderDiff(diff);
+
+  // 期待: 行は "A", (空行), "B" の3行
+  _tEq(rows.length, 3, "Equal newlines: should produce 3 rows");
+
+  const line0A = rows[0].a.tokens.map(t => t.value).join('');
+  const line0B = rows[0].b.tokens.map(t => t.value).join('');
+  _tEq(line0A, "A", "Row0 should be A (A-side)");
+  _tEq(line0B, "A", "Row0 should be A (B-side)");
+
+  _tEq(rows[1].a.tokens.length, 0, "Row1 should be empty A");
+  _tEq(rows[1].b.tokens.length, 0, "Row1 should be empty B");
+
+  const line2A = rows[2].a.tokens.map(t => t.value).join('');
+  const line2B = rows[2].b.tokens.map(t => t.value).join('');
+  _tEq(line2A, "B", "Row2 should be B (A-side)");
+  _tEq(line2B, "B", "Row2 should be B (B-side)");
+}
+
+function test_newline_only_row_when_b_has_extra_blank_line() {
+  // A: "X\nY"
+  // B: "X\n\nY"  (Bだけ空行が1つ多い)
+  const A = "X\nY";
+  const B = "X\n\nY";
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  const rows = renderDiff(diff);
+
+  // 期待: "X" 行 + (B側だけ↵行) + "Y" 行 の3行
+  _tEq(rows.length, 3, "B extra blank: should be 3 rows");
+  _tEq(rows[0].a.tokens[0].value, "X", "Row0 X");
+  const n = _isNewlineOnlyRow(rows[1]);
+  _tAssert(n.isNewlineOnly, "Row1 should be newline-only");
+  _tAssert(n.bIsNewlineOnly, "Row1 should be B newline-only");
+  _tEq(rows[2].a.tokens[0].value, "Y", "Row2 Y");
+}
+
+function test_newline_only_row_when_a_has_extra_blank_line() {
+  const A = "X\n\nY";
+  const B = "X\nY";
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  const rows = renderDiff(diff);
+
+  _tEq(rows.length, 3, "A extra blank: should be 3 rows");
+  const n = _isNewlineOnlyRow(rows[1]);
+  _tAssert(n.isNewlineOnly, "Row1 should be newline-only");
+  _tAssert(n.aIsNewlineOnly, "Row1 should be A newline-only");
+}
+
+function test_it_not_split_by_fake_newline() {
+  // 以前のバグ: "It" の直後に「存在しない改行」が差分表示に挟まることがあった。
+  // ここでは「行境界で It が分断されていない」ことを検証する。
+  const A = "If I put it in my batter,\nIt will make my batter bitter,\nBut a bit of better butter\n";
+  const B = "If I put it in my batter,\n\nThat will make my batter bitter.\nBut a bit of better butter,\n";
+
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  const rows = renderDiff(diff);
+
+  const aLines = rows.map(r => r.a.tokens.map(t => t.value).join(''));
+
+  // NG例: ある行の末尾が "It" で、次の行の先頭が " will" / "will" になってしまう
+  for (let i = 0; i + 1 < aLines.length; i++) {
+    const cur = aLines[i];
+    const next = aLines[i + 1];
+
+    if (cur.endsWith("It") && (next.startsWith(" will") || next.startsWith("will"))) {
+      throw new Error('[TEST] It must not be split across rows (found boundary: "It" | "' + next.slice(0, 12) + '...")');
+    }
+  }
+
+  }
+
+
+function test_punctuation_not_forced_to_next_line() {
+  // 以前のバグ: 句点/ドットが次の行に押し出されるケース
+  const A = "Hello.\nWorld\n";
+  const B = "Hello\nWorld\n";
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  const rows = renderDiff(diff);
+
+  const firstA = rows[0].a.tokens.map(t => t.value).join('');
+  _tEq(firstA, "Hello.", "Dot must remain on the same line in A");
+}
+
+function test_compaction_no_double_empty_after_newline_only() {
+  const A = "X\nY";
+  const B = "X\n\nY";
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  const rows = renderDiff(diff);
+
+  _tEq(rows.length, 3, "Compaction: should stay at 3 rows");
+  _tAssert(!(rows[1].a.tokens.length === 0 && rows[1].b.tokens.length === 0), "Row1 must not be both-empty");
+}
+
+// --- 実行 -------------------------------------------------------------
+
+function runAllTests() {
+  const tests = [
+    test_basic_no_diff_single_line,
+    test_equal_newline_creates_empty_row,
+    test_newline_only_row_when_b_has_extra_blank_line,
+    test_newline_only_row_when_a_has_extra_blank_line,
+    test_it_not_split_by_fake_newline,
+    test_punctuation_not_forced_to_next_line,
+    test_compaction_no_double_empty_after_newline_only
+  ];
+
+  const started = performance.now();
+  const results = [];
+  for (const fn of tests) {
+    const name = fn.name || '(anonymous)';
+    const t0 = performance.now();
+    fn();
+    const t1 = performance.now();
+    results.push({ name, ms: Math.round((t1 - t0) * 1000) / 1000 });
+  }
+  const total = Math.round((performance.now() - started) * 1000) / 1000;
+
+  console.groupCollapsed(`✅ runAllTests: ${results.length} tests passed (${total} ms)`);
+  for (const r of results) console.log(`${r.name}: ${r.ms} ms`);
+  console.groupEnd();
+}
+
+window.runAllTests = runAllTests;
+
+
 </script>
 </body>
 </html>
