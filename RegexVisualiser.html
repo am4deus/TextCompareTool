@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Regex Visualiser</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --surface: #ffffff;
+      --surface-strong: #f0f2f8;
+      --border: #d9dce7;
+      --text: #1f2430;
+      --text-muted: #5a6275;
+      --accent: #4f46e5;
+      --accent-strong: #4338ca;
+      --line: #546e7a;
+      --loop: #e91e63;
+      --node-fill: #fff8e1;
+      --node-stroke: #9e9e9e;
+      --anchor-fill: #7e57c2;
+      --anchor-stroke: #5e35b1;
+      --group-stroke: #2196f3;
+      --group-fill: rgba(33, 150, 243, 0.06);
+      --panel-shadow: 0 12px 32px rgba(31, 36, 48, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Inter", "Segoe UI", Roboto, system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at top, rgba(79, 70, 229, 0.12), transparent 55%), var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .app {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.5rem, 2.5vw, 2.1rem);
+      letter-spacing: -0.02em;
+    }
+
+    header p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px 20px;
+      box-shadow: var(--panel-shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 2.5fr) minmax(260px, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    @media (max-width: 920px) {
+      .controls-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    label.title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .input-wrap {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      min-width: 260px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
+      font-size: 1rem;
+      color: var(--text);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="text"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+      background: var(--surface);
+    }
+
+    button {
+      padding: 11px 16px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.08s ease, background 0.2s ease, border-color 0.2s ease;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent-strong);
+    }
+
+    button.primary:hover {
+      background: var(--accent-strong);
+    }
+
+    button.primary:active {
+      transform: translateY(1px);
+    }
+
+    .status-chip {
+      font-size: 0.78rem;
+      font-weight: 800;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      min-width: 46px;
+      text-align: center;
+    }
+
+    .status-chip.ok {
+      color: #1b5e20;
+      background: rgba(56, 142, 60, 0.14);
+      border-color: rgba(56, 142, 60, 0.28);
+    }
+
+    .status-chip.err {
+      color: #b71c1c;
+      background: rgba(229, 57, 53, 0.14);
+      border-color: rgba(229, 57, 53, 0.28);
+    }
+
+    .hint {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .flags,
+    .samples {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .flag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+    }
+
+    .flag-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      background: var(--surface-strong);
+      border: 1px solid var(--border);
+      font-size: 0.9rem;
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .flag-item input {
+      accent-color: var(--accent);
+    }
+
+    .sample-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 6px;
+    }
+
+    .sample-btn {
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
+      color: var(--text);
+      padding: 8px 10px;
+      border-radius: 10px;
+      text-align: left;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.9rem;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .sample-btn:hover {
+      border-color: var(--accent);
+      background: rgba(79, 70, 229, 0.08);
+    }
+
+    .visual-panel {
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      min-height: 180px;
+      overflow-x: auto;
+      position: relative;
+    }
+
+    .visual-panel .error {
+      color: #c62828;
+      font-weight: 700;
+      padding: 8px 4px;
+      display: inline-block;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      font-size: 0.84rem;
+      color: var(--text-muted);
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--node-fill);
+    }
+
+    .legend-swatch.anchor {
+      background: var(--anchor-fill);
+      border-color: var(--anchor-stroke);
+    }
+
+    .legend-swatch.group {
+      background: var(--group-fill);
+      border-color: var(--group-stroke);
+      border-style: dashed;
+    }
+
+    .legend-swatch.loop {
+      background: transparent;
+      border-color: var(--loop);
+    }
+
+    /* SVG styling */
+    svg.regex-diagram {
+      display: block;
+      background: #fafafa;
+      border-radius: 12px;
+    }
+
+    svg.regex-diagram path,
+    svg.regex-diagram line {
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
+    }
+
+    svg.regex-diagram .wire {
+      stroke: var(--line);
+      stroke-width: 2;
+      fill: none;
+    }
+
+    svg.regex-diagram .loop {
+      stroke: var(--loop);
+      stroke-width: 2.2;
+      fill: none;
+    }
+
+    svg.regex-diagram .node rect {
+      fill: var(--node-fill);
+      stroke: var(--node-stroke);
+      stroke-width: 1;
+    }
+
+    svg.regex-diagram .anchor rect {
+      fill: var(--anchor-fill);
+      stroke: var(--anchor-stroke);
+      stroke-width: 1;
+    }
+
+    svg.regex-diagram .group rect {
+      fill: var(--group-fill);
+      stroke: var(--group-stroke);
+      stroke-width: 2;
+      stroke-dasharray: 5 3;
+      shape-rendering: crispEdges;
+    }
+
+    svg.regex-diagram .label {
+      font-size: 10px;
+      fill: var(--accent-strong);
+      font-weight: 800;
+    }
+
+    svg.regex-diagram .quant {
+      font-size: 10px;
+      fill: #c2185b;
+      font-weight: 800;
+    }
+
+    svg.regex-diagram .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Regex Visualiser</h1>
+      <p>Regulex 風のレール／ジャンクション図で正規表現の構造を可視化します。</p>
+    </header>
+
+    <section class="panel">
+      <div class="controls-grid">
+        <div class="controls">
+          <div class="row" style="justify-content: space-between; gap: 12px;">
+            <label class="title" for="regex-input">Pattern</label>
+            <span class="hint">/pattern/flags 形式か、生パターン＋フラグで入力できます。</span>
+          </div>
+          <div class="input-wrap">
+            <input id="regex-input" type="text" spellcheck="false" value="/^(a|b)*?$/" aria-label="Regex pattern" />
+            <button class="primary" id="render-btn">描画</button>
+            <span id="status-chip" class="status-chip" aria-live="polite"></span>
+          </div>
+        </div>
+
+        <div class="flags" aria-label="regex flags">
+          <label class="title">Flags</label>
+          <div class="flag-list">
+            <label class="flag-item"><input type="checkbox" data-flag="g" checked /> g</label>
+            <label class="flag-item"><input type="checkbox" data-flag="i" /> i</label>
+            <label class="flag-item"><input type="checkbox" data-flag="m" /> m</label>
+            <label class="flag-item"><input type="checkbox" data-flag="s" /> s</label>
+            <label class="flag-item"><input type="checkbox" data-flag="u" /> u</label>
+            <label class="flag-item"><input type="checkbox" data-flag="y" /> y</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="samples">
+        <label class="title">Samples</label>
+        <div class="sample-list">
+          <button type="button" class="sample-btn" data-pattern="/^(a|b)*?$/">/^(a|b)*?$/</button>
+          <button type="button" class="sample-btn" data-pattern="/colou?r/gi">/colou?r/gi</button>
+          <button type="button" class="sample-btn" data-pattern="/(foo|bar){2,4}/">/(foo|bar){2,4}/</button>
+          <button type="button" class="sample-btn" data-pattern="/^\d{3}-\d{4}$/">/^\d{3}-\d{4}$/</button>
+          <button type="button" class="sample-btn" data-pattern="/https?:\/\/[\w.-]+/">/https?:\/\/[\w.-]+/</button>
+          <button type="button" class="sample-btn" data-pattern="/(?:[A-Z][a-z]+\s){1,3}/">/(?:[A-Z][a-z]+\s){1,3}/</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="row" style="justify-content: space-between;">
+        <label class="title" for="diagram">Diagram</label>
+        <div id="meta-info" class="hint" aria-live="polite"></div>
+      </div>
+      <div id="diagram" class="visual-panel" role="img" aria-label="Regex diagram"></div>
+      <div class="legend" aria-hidden="true">
+        <span class="legend-item"><span class="legend-swatch"></span>ノード</span>
+        <span class="legend-item"><span class="legend-swatch anchor"></span>アンカー</span>
+        <span class="legend-item"><span class="legend-swatch group"></span>グループ</span>
+        <span class="legend-item"><span class="legend-swatch loop"></span>繰り返しループ</span>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const snap = (v) => Math.round(v);
+
+    function orthRoundedPath(points, radius) {
+      const r = Math.max(0, radius | 0);
+      const snapped = points.map((p) => ({ x: snap(p.x), y: snap(p.y) }));
+      if (snapped.length < 2) return '';
+
+      let d = `M${snapped[0].x},${snapped[0].y}`;
+      for (let i = 1; i < snapped.length; i++) {
+        if (i === snapped.length - 1) {
+          d += ` L${snapped[i].x},${snapped[i].y}`;
+          break;
+        }
+        const p0 = snapped[i - 1];
+        const p1 = snapped[i];
+        const p2 = snapped[i + 1];
+        const v1x = p1.x - p0.x;
+        const v1y = p1.y - p0.y;
+        const v2x = p2.x - p1.x;
+        const v2y = p2.y - p1.y;
+        const isStraight =
+          (v1x === 0 && v2x === 0) ||
+          (v1y === 0 && v2y === 0) ||
+          (v1x === 0 && v1y === 0) ||
+          (v2x === 0 && v2y === 0);
+
+        if (isStraight || r === 0) {
+          d += ` L${p1.x},${p1.y}`;
+          continue;
+        }
+
+        const len1 = Math.abs(v1x) + Math.abs(v1y);
+        const len2 = Math.abs(v2x) + Math.abs(v2y);
+        const rr = Math.min(r, Math.floor(Math.min(len1, len2) / 2));
+        const c1 = { x: p1.x - Math.sign(v1x) * rr, y: p1.y - Math.sign(v1y) * rr };
+        const c2 = { x: p1.x + Math.sign(v2x) * rr, y: p1.y + Math.sign(v2y) * rr };
+        d += ` L${c1.x},${c1.y} Q${p1.x},${p1.y} ${c2.x},${c2.y}`;
+      }
+      return d;
+    }
+
+    function escapeXml(s) {
+      return String(s).replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+    }
+
+    function normalizePattern(input) {
+      const s = input.trim();
+      if (s.length >= 2 && s[0] === '/' && s.lastIndexOf('/') > 0) {
+        const last = s.lastIndexOf('/');
+        return {
+          body: s.slice(1, last),
+          flags: s.slice(last + 1),
+          raw: s,
+          source: 'slash',
+        };
+      }
+      return { body: s, flags: '', raw: s, source: 'raw' };
+    }
+
+    function getSelectedFlags() {
+      return Array.from(document.querySelectorAll('[data-flag]'))
+        .filter((el) => el.checked)
+        .map((el) => el.getAttribute('data-flag'))
+        .join('');
+    }
+
+    function parseRegex(input) {
+      const norm = normalizePattern(input);
+      const src = norm.body;
+      let i = 0;
+
+      function peek() {
+        return src[i] || '';
+      }
+      function next() {
+        return src[i++] || '';
+      }
+      function eof() {
+        return i >= src.length;
+      }
+
+      function parseExpression() {
+        const branches = [parseSequence()];
+        while (!eof() && peek() === '|') {
+          next();
+          branches.push(parseSequence());
+        }
+        if (branches.length === 1) return branches[0];
+        return { t: 'alt', branches };
+      }
+
+      function parseSequence() {
+        const items = [];
+        while (!eof()) {
+          const ch = peek();
+          if (ch === ')' || ch === '|') break;
+          items.push(parseTerm());
+        }
+        return { t: 'seq', items };
+      }
+
+      function parseTerm() {
+        const atom = parseAtom();
+        const q = parseQuantifier();
+        if (!q) return atom;
+        return { t: 'quant', atom, q };
+      }
+
+      function parseAtom() {
+        const ch = peek();
+        if (!ch) return { t: 'empty' };
+
+        if (ch === '(') {
+          next();
+          const inner = parseExpression();
+          if (peek() !== ')') throw new Error("')' がありません");
+          next();
+          return { t: 'group', inner };
+        }
+
+        if (ch === '[') {
+          let raw = next();
+          while (!eof()) {
+            const c = next();
+            raw += c;
+            if (c === '\\' && !eof()) {
+              raw += next();
+              continue;
+            }
+            if (c === ']') break;
+          }
+          if (raw[raw.length - 1] !== ']') throw new Error("']' がありません");
+          return { t: 'class', raw };
+        }
+
+        if (ch === '\\') {
+          next();
+          const c = next();
+          if (!c) throw new Error('エスケープが不完全です');
+          return { t: 'lit', v: '\\' + c };
+        }
+
+        if (ch === '^' || ch === '$') {
+          next();
+          return { t: 'anchor', v: ch };
+        }
+
+        if (ch === '.') {
+          next();
+          return { t: 'meta', v: '.' };
+        }
+
+        next();
+        return { t: 'lit', v: ch };
+      }
+
+      function parseQuantifier() {
+        if (eof()) return null;
+        const ch = peek();
+        let q = null;
+
+        if (ch === '*' || ch === '+' || ch === '?') {
+          next();
+          q = {
+            kind: ch,
+            min: ch === '+' ? 1 : 0,
+            max: ch === '?' ? 1 : Infinity,
+            raw: ch,
+            lazy: false,
+          };
+          if (peek() === '?') {
+            next();
+            q.lazy = true;
+            q.raw += '?';
+          }
+          return q;
+        }
+
+        if (ch === '{') {
+          const start = i;
+          next();
+          let a = '';
+          while (!eof() && /[0-9]/.test(peek())) a += next();
+          if (peek() === ',') {
+            next();
+            let b = '';
+            while (!eof() && /[0-9]/.test(peek())) b += next();
+            if (peek() !== '}') throw new Error("'}' がありません");
+            next();
+            const min = a === '' ? 0 : parseInt(a, 10);
+            const max = b === '' ? Infinity : parseInt(b, 10);
+            q = { kind: 'range', min, max, raw: src.slice(start, i), lazy: false };
+          } else {
+            if (peek() !== '}') throw new Error("'}' がありません");
+            next();
+            const n = a === '' ? 0 : parseInt(a, 10);
+            q = { kind: 'range', min: n, max: n, raw: src.slice(start, i), lazy: false };
+          }
+          if (peek() === '?') {
+            next();
+            q.lazy = true;
+            q.raw += '?';
+          }
+          return q;
+        }
+
+        return null;
+      }
+
+      const ast = parseExpression();
+      if (!eof()) throw new Error('パースできない文字があります: ' + peek());
+      return { t: 'root', ast, body: src, flags: norm.flags, source: norm.source };
+    }
+
+    const Metrics = {
+      padX: 20,
+      padY: 20,
+      colGap: 30,
+      rowGap: 46,
+      railInset: 30,
+      corner: 11,
+      loopRise: 24,
+      quantTopExtra: 12,
+      quantLabelGap: 18,
+      quantBottomExtra: 8,
+      groupPad: 16,
+      groupLabelH: 18,
+      anchorW: 58,
+      anchorH: 36,
+      nodeH: 34,
+      litW: 46,
+      metaW: 50,
+      classW: 84,
+      emptyW: 20,
+    };
+
+    function labelForQuant(q) {
+      if (!q) return '';
+      if (q.kind === '*') return q.lazy ? '0回以上 (最短)' : '0回以上';
+      if (q.kind === '+') return q.lazy ? '1回以上 (最短)' : '1回以上';
+      if (q.kind === '?') return q.lazy ? '0回か1回 (最短)' : '0回か1回';
+      if (q.kind === 'range') {
+        const a = q.min;
+        const b = q.max === Infinity ? '' : q.max;
+        const core = q.max === q.min ? `{${a}}` : `{${a},${b}}`;
+        return q.lazy ? `${core} (最短)` : core;
+      }
+      return q.raw || '';
+    }
+
+    function quantLayout(q, atomHeight) {
+      const allowZero = q.kind === '*' || q.kind === '?' || (q.kind === 'range' && q.min === 0);
+      const allowMany =
+        q.kind === '*' ||
+        q.kind === '+' ||
+        (q.kind === 'range' && (q.max === Infinity || q.max > 1));
+      const topPad = (allowMany ? Metrics.loopRise : 0) + Metrics.quantTopExtra;
+      const bottomPad = Metrics.quantLabelGap + Metrics.quantBottomExtra;
+      const atomCenterOffset = (topPad - bottomPad) / 2;
+      const loopTopY = atomCenterOffset - atomHeight / 2 - Metrics.loopRise;
+      const labelOffset = atomCenterOffset + atomHeight / 2 + Metrics.quantLabelGap;
+      return { allowZero, allowMany, topPad, bottomPad, atomCenterOffset, loopTopY, labelOffset };
+    }
+
+    function measure(node) {
+      switch (node.t) {
+        case 'root':
+          return measure(node.ast);
+        case 'seq': {
+          if (node.items.length === 0) return { w: Metrics.emptyW, h: Metrics.nodeH };
+          let w = 0;
+          let h = Metrics.nodeH;
+          node.items.forEach((child, idx) => {
+            const m = measure(child);
+            w += m.w;
+            if (idx) w += Metrics.colGap;
+            h = Math.max(h, m.h);
+          });
+          return { w, h };
+        }
+        case 'alt': {
+          const branchMs = node.branches.map((b) => measure(b));
+          const maxW = Math.max(...branchMs.map((m) => m.w), Metrics.emptyW);
+          const h = (branchMs.length - 1) * Metrics.rowGap + Math.max(...branchMs.map((m) => m.h), Metrics.nodeH);
+          return { w: maxW + Metrics.railInset * 2, h: Math.max(h, Metrics.nodeH) };
+        }
+        case 'group': {
+          const innerM = measure(node.inner);
+          return {
+            w: innerM.w + Metrics.groupPad * 2 + Metrics.railInset * 2,
+            h: innerM.h + Metrics.groupPad * 2 + Metrics.groupLabelH,
+          };
+        }
+        case 'anchor':
+          return { w: Metrics.anchorW, h: Metrics.anchorH };
+        case 'lit':
+          return { w: Metrics.litW, h: Metrics.nodeH };
+        case 'meta':
+          return { w: Metrics.metaW, h: Metrics.nodeH };
+        case 'class':
+          return { w: Metrics.classW, h: Metrics.nodeH };
+        case 'empty':
+          return { w: Metrics.emptyW, h: Metrics.nodeH };
+        case 'quant': {
+          const m = measure(node.atom);
+          const layout = quantLayout(node.q, m.h);
+          return { w: m.w, h: m.h + layout.topPad + layout.bottomPad };
+        }
+        default:
+          return { w: Metrics.litW, h: Metrics.nodeH };
+      }
+    }
+
+    function createRenderer() {
+      const backgrounds = [];
+      const parts = [];
+      const edges = [];
+
+      const defs = `
+        <defs>
+          <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#546E7A"></path>
+          </marker>
+          <marker id="arrowPink" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+            <path d="M0,0 L5,2.5 L0,5 Z" fill="#E91E63"></path>
+          </marker>
+        </defs>`;
+
+      function wire(points, arrow = false) {
+        const d = orthRoundedPath(points, Metrics.corner);
+        edges.push(`<path class="wire" d="${d}" ${arrow ? 'marker-end="url(#arrow)"' : ''}></path>`);
+      }
+
+      function loop(points) {
+        const d = orthRoundedPath(points, Metrics.corner + 2);
+        edges.push(`<path class="loop" d="${d}" marker-end="url(#arrowPink)"></path>`);
+      }
+
+      function drawNodeBox(x, y, w, h, cls, txt, subtxt) {
+        const rx = 7;
+        const sx = snap(x);
+        const sy = snap(y);
+        const sw = snap(w);
+        const sh = snap(h);
+        if (cls === 'anchor') {
+          parts.push(`<g class="anchor"><rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="${rx}"></rect>
+            <text x="${snap(sx + sw / 2)}" y="${snap(sy + sh / 2 + 5)}" text-anchor="middle" font-size="14" fill="#fff" font-weight="800">${escapeXml(txt)}</text>
+            ${subtxt ? `<text x="${snap(sx + sw / 2)}" y="${snap(sy + sh - 7)}" text-anchor="middle" font-size="9" class="mono" fill="rgba(255,255,255,0.88)">${escapeXml(subtxt)}</text>` : ''}
+          </g>`);
+          return;
+        }
+
+        parts.push(`<g class="node"><rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="${rx}"></rect>
+          <text x="${snap(sx + sw / 2)}" y="${snap(sy + sh / 2 + 5)}" text-anchor="middle" font-size="13" font-weight="800" fill="#333">${escapeXml(txt)}</text>
+        </g>`);
+      }
+
+      function place(node, x, yCenter) {
+        const m = measure(node);
+
+        if (node.t === 'root') return place(node.ast, x, yCenter);
+
+        if (node.t === 'seq') {
+          if (node.items.length === 0) {
+            const inP = { x: snap(x), y: snap(yCenter) };
+            const outP = { x: snap(x + m.w), y: snap(yCenter) };
+            wire([inP, outP], true);
+            return { in: inP, out: outP };
+          }
+
+          let curX = x;
+          let firstPorts = null;
+          let prevOut = null;
+          node.items.forEach((child) => {
+            const ports = place(child, curX, yCenter);
+            if (!firstPorts) firstPorts = ports;
+            if (prevOut) wire([prevOut, ports.in], true);
+            prevOut = ports.out;
+            curX += measure(child).w + Metrics.colGap;
+          });
+          return { in: firstPorts.in, out: prevOut };
+        }
+
+        if (node.t === 'anchor') {
+          const w = Metrics.anchorW;
+          const h = Metrics.anchorH;
+          const top = yCenter - h / 2;
+          drawNodeBox(x, top, w, h, 'anchor', node.v === '^' ? '行頭' : '行末', node.v);
+          return { in: { x: snap(x), y: snap(yCenter) }, out: { x: snap(x + w), y: snap(yCenter) } };
+        }
+
+        if (node.t === 'lit' || node.t === 'meta' || node.t === 'class') {
+          const w = measure(node).w;
+          const h = Metrics.nodeH;
+          const top = yCenter - h / 2;
+          const txt = node.t === 'class' ? node.raw : node.v;
+          drawNodeBox(x, top, w, h, 'node', txt);
+          return { in: { x: snap(x), y: snap(yCenter) }, out: { x: snap(x + w), y: snap(yCenter) } };
+        }
+
+        if (node.t === 'empty') {
+          const inP = { x: snap(x), y: snap(yCenter) };
+          const outP = { x: snap(x + m.w), y: snap(yCenter) };
+          wire([inP, outP], true);
+          return { in: inP, out: outP };
+        }
+
+        if (node.t === 'alt') {
+          const inP = { x: snap(x), y: snap(yCenter) };
+          const outP = { x: snap(x + m.w), y: snap(yCenter) };
+          const splitX = snap(x + Metrics.railInset);
+          const mergeX = snap(x + m.w - Metrics.railInset);
+
+          wire([inP, { x: splitX, y: yCenter }]);
+          wire([{ x: mergeX, y: yCenter }, outP]);
+
+          const count = node.branches.length;
+          const topY = yCenter - ((count - 1) * Metrics.rowGap) / 2;
+
+          node.branches.forEach((branch, bi) => {
+            const by = topY + bi * Metrics.rowGap;
+            const brStart = { x: splitX, y: by };
+            const brEnd = { x: mergeX, y: by };
+            const bx = splitX + 10;
+            const ports = place(branch, bx, by);
+            wire([brStart, { x: brStart.x, y: ports.in.y }, ports.in]);
+            wire([ports.out, { x: brEnd.x, y: ports.out.y }, brEnd]);
+          });
+
+          wire([{ x: mergeX, y: yCenter }, outP], true);
+          return { in: inP, out: outP };
+        }
+
+        if (node.t === 'group') {
+          const gm = measure(node);
+          const boxX = x;
+          const boxY = yCenter - gm.h / 2;
+          const gin = { x: snap(boxX), y: snap(yCenter) };
+          const gout = { x: snap(boxX + gm.w), y: snap(yCenter) };
+
+          backgrounds.push(`<g class="group"><rect x="${snap(boxX)}" y="${snap(boxY)}" width="${snap(gm.w)}" height="${snap(gm.h)}" rx="10"></rect></g>`);
+          parts.push(`<text class="label" x="${snap(boxX + 12)}" y="${snap(boxY + 16)}">グループ</text>`);
+
+          const innerX = boxX + Metrics.groupPad + Metrics.railInset;
+          const innerPorts = place(node.inner, innerX, yCenter);
+          wire([gin, innerPorts.in], true);
+          wire([innerPorts.out, gout], true);
+          return { in: gin, out: gout };
+        }
+
+        if (node.t === 'quant') {
+          const atomMetrics = measure(node.atom);
+          const layout = quantLayout(node.q, atomMetrics.h);
+          const atomCenterY = yCenter + layout.atomCenterOffset;
+          const ports = place(node.atom, x, atomCenterY);
+          const inP = ports.in;
+          const outP = ports.out;
+          const q = node.q;
+          const label = labelForQuant(q);
+
+          if (layout.allowZero) wire([inP, outP], true);
+          if (layout.allowMany) {
+            const topY = snap(yCenter + layout.loopTopY);
+            loop([outP, { x: outP.x, y: topY }, { x: inP.x, y: topY }, inP]);
+          }
+
+          parts.push(`<text class="quant" x="${snap((inP.x + outP.x) / 2)}" y="${snap(yCenter + layout.labelOffset)}" text-anchor="middle">${escapeXml(label)}</text>`);
+          return { in: inP, out: outP };
+        }
+
+        const w = Metrics.litW;
+        const h = Metrics.nodeH;
+        drawNodeBox(x, yCenter - h / 2, w, h, 'node', '?');
+        return { in: { x: snap(x), y: snap(yCenter) }, out: { x: snap(x + w), y: snap(yCenter) } };
+      }
+
+      function build(ast, titleText, subtitleText) {
+        const m = measure(ast);
+        const headerH = 40;
+        const footerH = 24;
+        const width = snap(m.w + Metrics.padX * 2);
+        const height = snap(m.h + Metrics.padY * 2 + headerH + footerH);
+        const startX = Metrics.padX;
+        const centerY = Metrics.padY + headerH + m.h / 2;
+
+        parts.push(`<text x="18" y="24" font-size="12" fill="#5a6275"><tspan fill="#78909C">正規表現: </tspan><tspan class="mono" font-weight="800" fill="#5E35B1">${escapeXml(titleText)}</tspan></text>`);
+        if (subtitleText) {
+          parts.push(`<text x="18" y="38" font-size="10" fill="#6c7390">${escapeXml(subtitleText)}</text>`);
+        }
+        parts.push(`<line x1="12" y1="46" x2="${width - 12}" y2="46" stroke="#E0E0E0" stroke-width="1"></line>`);
+
+        const inP = { x: snap(startX), y: snap(centerY) };
+        const outP = { x: snap(startX + m.w), y: snap(centerY) };
+        parts.push(`<circle cx="${inP.x}" cy="${inP.y}" r="4" fill="#546E7A"></circle>`);
+        parts.push(`<circle cx="${outP.x}" cy="${outP.y}" r="4" fill="#546E7A"></circle>`);
+
+        place(ast, startX, centerY);
+
+        return `<svg class="regex-diagram" width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Regex diagram">
+          ${defs}
+          <rect width="100%" height="100%" fill="#FAFAFA" rx="12"></rect>
+          ${backgrounds.join('')}
+          ${edges.join('')}
+          ${parts.join('')}
+        </svg>`;
+      }
+
+      return { build };
+    }
+
+    function buildRegexDiagram(patternInput) {
+      const parsed = parseRegex(patternInput);
+      const renderer = createRenderer();
+      return renderer.build(parsed, patternInput, parsed.flags ? `flags: ${parsed.flags}` : '');
+    }
+
+    function validateRegex(rawPattern) {
+      const norm = normalizePattern(rawPattern);
+      if (!norm.body) throw new Error('パターンを入力してください');
+      if (norm.source === 'slash') {
+        new RegExp(norm.body, norm.flags);
+        return { body: norm.body, flags: norm.flags, source: norm.source };
+      }
+      const flags = getSelectedFlags();
+      new RegExp(norm.body, flags);
+      return { body: norm.body, flags, source: norm.source };
+    }
+
+    function setStatus(kind, text = '') {
+      const chip = document.getElementById('status-chip');
+      chip.textContent = text;
+      chip.classList.remove('ok', 'err');
+      if (kind) chip.classList.add(kind);
+    }
+
+    function syncFlagsFromSlash(flags) {
+      const checks = Array.from(document.querySelectorAll('[data-flag]'));
+      checks.forEach((el) => {
+        const flag = el.getAttribute('data-flag');
+        el.checked = flags.includes(flag);
+      });
+    }
+
+    function visualize() {
+      const input = document.getElementById('regex-input').value;
+      const diagram = document.getElementById('diagram');
+      const meta = document.getElementById('meta-info');
+
+      setStatus('', '');
+      meta.textContent = '';
+
+      try {
+        const { body, flags, source } = validateRegex(input);
+        if (source === 'slash') {
+          syncFlagsFromSlash(flags);
+        }
+        diagram.innerHTML = buildRegexDiagram(input);
+        setStatus('ok', 'OK');
+        meta.textContent = flags ? `flags: ${flags}` : 'flags: (none)';
+      } catch (err) {
+        diagram.innerHTML = `<span class="error">エラー: ${escapeXml(err.message || err)}</span>`;
+        setStatus('err', 'ERR');
+        meta.textContent = '入力を確認してください';
+      }
+    }
+
+    document.getElementById('render-btn').addEventListener('click', visualize);
+    document.getElementById('regex-input').addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') visualize();
+    });
+
+    document.querySelectorAll('[data-flag]').forEach((el) => {
+      el.addEventListener('change', () => {
+        const norm = normalizePattern(document.getElementById('regex-input').value);
+        if (norm.source === 'raw') visualize();
+      });
+    });
+
+    document.querySelectorAll('.sample-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const pattern = btn.getAttribute('data-pattern');
+        document.getElementById('regex-input').value = pattern;
+        visualize();
+      });
+    });
+
+    visualize();
+  </script>
+</body>
+</html>

@@ -711,6 +711,132 @@ footer {
 .tool-panel.active {
   display: block;
 }
+
+
+/* Regex visualizer (rail/junction) */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.regex-visual-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.regex-visual-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.regex-visual-msg {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  min-width: 40px;
+  text-align: center;
+}
+
+.regex-visual-msg.ok {
+  color: #2e7d32;
+  background: rgba(46, 125, 50, 0.12);
+  border-color: rgba(46, 125, 50, 0.25);
+}
+
+.regex-visual-msg.err {
+  color: #c62828;
+  background: rgba(198, 40, 40, 0.12);
+  border-color: rgba(198, 40, 40, 0.25);
+}
+
+.regex-visual {
+  --rv-bg: #fafafa;
+  --rv-ink: #333;
+  --rv-muted: #78909c;
+  --rv-line: #546e7a;
+  --rv-pink: #e91e63;
+  --rv-blue: #2196f3;
+  --rv-blue-ink: #1976d2;
+  --rv-lit: #ffe082;
+  --rv-lit2: #fff8e1;
+  --rv-stroke: #999;
+  --rv-anchor: #7e57c2;
+  --rv-anchor2: #5e35b1;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 120px;
+  overflow-x: auto;
+  margin-top: 10px;
+}
+
+.regex-visual svg {
+  display: block;
+  background: var(--rv-bg);
+  border-radius: 10px;
+}
+
+.regex-visual path,
+.regex-visual line {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.regex-visual .wire {
+  stroke: var(--rv-line);
+  stroke-width: 2;
+  fill: none;
+}
+
+.regex-visual .loop {
+  stroke: var(--rv-pink);
+  stroke-width: 2.2;
+  fill: none;
+}
+
+.regex-visual .node rect {
+  fill: var(--rv-lit2);
+  stroke: var(--rv-stroke);
+  stroke-width: 1;
+}
+
+.regex-visual .anchor rect {
+  fill: var(--rv-anchor);
+  stroke: var(--rv-anchor2);
+  stroke-width: 1;
+}
+
+.regex-visual .group rect {
+  fill: rgba(33, 150, 243, 0.05);
+  stroke: var(--rv-blue);
+  stroke-width: 2;
+  stroke-dasharray: 5, 3;
+  shape-rendering: crispEdges;
+}
+
+.regex-visual .label {
+  font-size: 10px;
+  fill: var(--rv-blue-ink);
+  font-weight: 700;
+}
+
+.regex-visual .quant {
+  font-size: 10px;
+  fill: #c2185b;
+  font-weight: 700;
+}
+
+.regex-visual .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.regex-visual .err {
+  color: #c00;
+}
 </style>
 </head>
 <body>
@@ -1484,11 +1610,12 @@ footer {
       
       <div class="option-section">
         <div class="option-section-title">■ ビジュアライズ</div>
-        <div class="option-row">
+        <div class="option-row regex-visual-row">
           <button class="btn-primary btn-small" onclick="visualizeRegex()">図を生成</button>
-          <span style="font-size:0.75rem; color:#666; margin-left:10px;">正規表現の構造を可視化</span>
+          <span class="regex-visual-hint">正規表現の構造を可視化</span>
+          <span id="regex-visual-msg" class="regex-visual-msg mono"></span>
         </div>
-        <div id="regex-visual" style="padding:10px; background:#fff; border:1px solid #ddd; border-radius:5px; min-height:100px; overflow-x:auto; margin-top:10px;"></div>
+        <div id="regex-visual" class="regex-visual"></div>
       </div>
       
       <div class="option-section">
@@ -3762,356 +3889,562 @@ function executeRegexReplace() {
 // ============================================
 // 正規表現ビジュアライザー
 // ============================================
-function visualizeRegex() {
-  const pattern = document.getElementById('regex-pattern').value;
-  const container = document.getElementById('regex-visual');
-  
-  if (!pattern) {
-    container.innerHTML = '<span style="color:#888">パターンを入力してください</span>';
-    return;
+const snap = (v) => Math.round(v);
+
+function orthRoundedPath(points, radius) {
+  const r = Math.max(0, radius | 0);
+  const snapped = points.map((p) => ({ x: snap(p.x), y: snap(p.y) }));
+  if (snapped.length < 2) return '';
+
+  let d = `M${snapped[0].x},${snapped[0].y}`;
+  for (let i = 1; i < snapped.length; i++) {
+    if (i === snapped.length - 1) {
+      d += ` L${snapped[i].x},${snapped[i].y}`;
+      break;
+    }
+    const p0 = snapped[i - 1];
+    const p1 = snapped[i];
+    const p2 = snapped[i + 1];
+    const v1x = p1.x - p0.x;
+    const v1y = p1.y - p0.y;
+    const v2x = p2.x - p1.x;
+    const v2y = p2.y - p1.y;
+    const isStraight =
+      (v1x === 0 && v2x === 0) ||
+      (v1y === 0 && v2y === 0) ||
+      (v1x === 0 && v1y === 0) ||
+      (v2x === 0 && v2y === 0);
+
+    if (isStraight || r === 0) {
+      d += ` L${p1.x},${p1.y}`;
+      continue;
+    }
+
+    const len1 = Math.abs(v1x) + Math.abs(v1y);
+    const len2 = Math.abs(v2x) + Math.abs(v2y);
+    const rr = Math.min(r, Math.floor(Math.min(len1, len2) / 2));
+    const c1 = { x: p1.x - Math.sign(v1x) * rr, y: p1.y - Math.sign(v1y) * rr };
+    const c2 = { x: p1.x + Math.sign(v2x) * rr, y: p1.y + Math.sign(v2y) * rr };
+    d += ` L${c1.x},${c1.y} Q${p1.x},${p1.y} ${c2.x},${c2.y}`;
   }
-  
-  try {
-    new RegExp(pattern);
-    const svg = buildRegexDiagram(pattern);
-    container.innerHTML = svg;
-  } catch (e) {
-    container.innerHTML = `<span style="color:red">エラー: ${e.message}</span>`;
+  return d;
+}
+
+function normalizePattern(input) {
+  const s = input.trim();
+  if (s.length >= 2 && s[0] === '/' && s.lastIndexOf('/') > 0) {
+    const last = s.lastIndexOf('/');
+    return s.slice(1, last);
+  }
+  return s;
+}
+
+function parseRegex(input) {
+  const src = normalizePattern(input);
+  let i = 0;
+
+  function peek() {
+    return src[i] || '';
+  }
+  function next() {
+    return src[i++] || '';
+  }
+  function eof() {
+    return i >= src.length;
+  }
+
+  function parseExpression() {
+    const branches = [parseSequence()];
+    while (!eof() && peek() === '|') {
+      next();
+      branches.push(parseSequence());
+    }
+    if (branches.length === 1) return branches[0];
+    return { t: 'alt', branches };
+  }
+
+  function parseSequence() {
+    const items = [];
+    while (!eof()) {
+      const ch = peek();
+      if (ch === ')' || ch === '|') break;
+      items.push(parseTerm());
+    }
+    return { t: 'seq', items };
+  }
+
+  function parseTerm() {
+    const atom = parseAtom();
+    const q = parseQuantifier();
+    if (!q) return atom;
+    return { t: 'quant', atom, q };
+  }
+
+  function parseAtom() {
+    const ch = peek();
+    if (!ch) return { t: 'empty' };
+
+    if (ch === '(') {
+      next();
+      const inner = parseExpression();
+      if (peek() !== ')') throw new Error("')' がありません");
+      next();
+      return { t: 'group', inner };
+    }
+
+    if (ch === '[') {
+      let raw = next();
+      while (!eof()) {
+        const c = next();
+        raw += c;
+        if (c === '\\' && !eof()) {
+          raw += next();
+          continue;
+        }
+        if (c === ']') break;
+      }
+      if (raw[raw.length - 1] !== ']') throw new Error("']' がありません");
+      return { t: 'class', raw };
+    }
+
+    if (ch === '\\') {
+      next();
+      const c = next();
+      if (!c) throw new Error('エスケープが不完全です');
+      return { t: 'lit', v: '\\' + c };
+    }
+
+    if (ch === '^' || ch === '$') {
+      next();
+      return { t: 'anchor', v: ch };
+    }
+
+    if (ch === '.') {
+      next();
+      return { t: 'meta', v: '.' };
+    }
+
+    next();
+    return { t: 'lit', v: ch };
+  }
+
+  function parseQuantifier() {
+    if (eof()) return null;
+    const ch = peek();
+    let q = null;
+
+    if (ch === '*' || ch === '+' || ch === '?') {
+      next();
+      q = {
+        kind: ch,
+        min: ch === '+' ? 1 : 0,
+        max: ch === '?' ? 1 : Infinity,
+        raw: ch,
+        lazy: false,
+      };
+      if (peek() === '?') {
+        next();
+        q.lazy = true;
+        q.raw += '?';
+      }
+      return q;
+    }
+
+    if (ch === '{') {
+      const start = i;
+      next();
+      let a = '';
+      while (!eof() && /[0-9]/.test(peek())) a += next();
+      if (peek() === ',') {
+        next();
+        let b = '';
+        while (!eof() && /[0-9]/.test(peek())) b += next();
+        if (peek() !== '}') throw new Error("'}' がありません");
+        next();
+        const min = a === '' ? 0 : parseInt(a, 10);
+        const max = b === '' ? Infinity : parseInt(b, 10);
+        q = { kind: 'range', min, max, raw: src.slice(start, i), lazy: false };
+      } else {
+        if (peek() !== '}') throw new Error("'}' がありません");
+        next();
+        const n = a === '' ? 0 : parseInt(a, 10);
+        q = { kind: 'range', min: n, max: n, raw: src.slice(start, i), lazy: false };
+      }
+      if (peek() === '?') {
+        next();
+        q.lazy = true;
+        q.raw += '?';
+      }
+      return q;
+    }
+
+    return null;
+  }
+
+  const ast = parseExpression();
+  if (!eof()) throw new Error('パースできない文字があります: ' + peek());
+  return { t: 'root', ast, body: src };
+}
+
+const RegexMetrics = {
+  padX: 16,
+  padY: 18,
+  colGap: 28,
+  rowGap: 44,
+  railInset: 28,
+  corner: 10,
+  loopRise: 22,
+  quantTopExtra: 12,
+  quantLabelGap: 18,
+  quantBottomExtra: 8,
+  groupPad: 14,
+  groupLabelH: 18,
+  anchorW: 56,
+  anchorH: 34,
+  nodeH: 32,
+  litW: 42,
+  metaW: 48,
+  classW: 76,
+  emptyW: 18,
+};
+
+function labelForQuant(q) {
+  if (!q) return '';
+  if (q.kind === '*') return q.lazy ? '0回以上 (最短)' : '0回以上';
+  if (q.kind === '+') return q.lazy ? '1回以上 (最短)' : '1回以上';
+  if (q.kind === '?') return q.lazy ? '0回か1回 (最短)' : '0回か1回';
+  if (q.kind === 'range') {
+    const a = q.min;
+    const b = q.max === Infinity ? '' : q.max;
+    const core = q.max === q.min ? `{${a}}` : `{${a},${b}}`;
+    return q.lazy ? `${core} (最短)` : core;
+  }
+  return q.raw || '';
+}
+
+function quantLayout(q, atomHeight) {
+  const allowZero = q.kind === '*' || q.kind === '?' || (q.kind === 'range' && q.min === 0);
+  const allowMany =
+    q.kind === '*' ||
+    q.kind === '+' ||
+    (q.kind === 'range' && (q.max === Infinity || q.max > 1));
+  const topPad = (allowMany ? RegexMetrics.loopRise : 0) + RegexMetrics.quantTopExtra;
+  const bottomPad = RegexMetrics.quantLabelGap + RegexMetrics.quantBottomExtra;
+  const atomCenterOffset = (topPad - bottomPad) / 2;
+  const loopTopY = atomCenterOffset - atomHeight / 2 - RegexMetrics.loopRise;
+  const labelOffset = atomCenterOffset + atomHeight / 2 + RegexMetrics.quantLabelGap;
+  return { allowZero, allowMany, topPad, bottomPad, atomCenterOffset, loopTopY, labelOffset };
+}
+
+function measureRegex(node) {
+  switch (node.t) {
+    case 'root':
+      return measureRegex(node.ast);
+    case 'seq': {
+      if (node.items.length === 0) return { w: RegexMetrics.emptyW, h: RegexMetrics.nodeH };
+      let w = 0;
+      let h = RegexMetrics.nodeH;
+      node.items.forEach((child, idx) => {
+        const m = measureRegex(child);
+        w += m.w;
+        if (idx) w += RegexMetrics.colGap;
+        h = Math.max(h, m.h);
+      });
+      return { w, h };
+    }
+    case 'alt': {
+      const branchMs = node.branches.map((b) => measureRegex(b));
+      const maxW = Math.max(...branchMs.map((m) => m.w), RegexMetrics.emptyW);
+      const h = (branchMs.length - 1) * RegexMetrics.rowGap + Math.max(...branchMs.map((m) => m.h), RegexMetrics.nodeH);
+      return { w: maxW + RegexMetrics.railInset * 2, h: Math.max(h, RegexMetrics.nodeH) };
+    }
+    case 'group': {
+      const innerM = measureRegex(node.inner);
+      return {
+        w: innerM.w + RegexMetrics.groupPad * 2 + RegexMetrics.railInset * 2,
+        h: innerM.h + RegexMetrics.groupPad * 2 + RegexMetrics.groupLabelH,
+      };
+    }
+    case 'anchor':
+      return { w: RegexMetrics.anchorW, h: RegexMetrics.anchorH };
+    case 'lit':
+      return { w: RegexMetrics.litW, h: RegexMetrics.nodeH };
+    case 'meta':
+      return { w: RegexMetrics.metaW, h: RegexMetrics.nodeH };
+    case 'class':
+      return { w: RegexMetrics.classW, h: RegexMetrics.nodeH };
+    case 'empty':
+      return { w: RegexMetrics.emptyW, h: RegexMetrics.nodeH };
+    case 'quant': {
+      const m = measureRegex(node.atom);
+      const layout = quantLayout(node.q, m.h);
+      return { w: m.w, h: m.h + layout.topPad + layout.bottomPad };
+    }
+    default:
+      return { w: RegexMetrics.litW, h: RegexMetrics.nodeH };
   }
 }
 
-function buildRegexDiagram(pattern) {
-  const h = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  
-  // トークン化
-  const tokens = [];
-  let i = 0, grp = 0;
-  
-  while (i < pattern.length) {
-    const c = pattern[i];
-    
-    if (c === '\\' && i + 1 < pattern.length) {
-      const n = pattern[i + 1];
-      const map = {
-        d: '数字', D: '非数字', w: '英数字', W: '非英数字',
-        s: '空白', S: '非空白', b: '境界', B: '非境界',
-        n: '改行', r: '復帰', t: 'タブ'
-      };
-      tokens.push({ t: 'char', v: map[n] || n, raw: '\\' + n, cls: map[n] ? 'meta' : 'lit' });
-      i += 2;
-    } else if (c === '[') {
-      let j = i + 1;
-      if (pattern[j] === '^') j++;
-      if (pattern[j] === ']') j++;
-      while (j < pattern.length && pattern[j] !== ']') { if (pattern[j] === '\\') j++; j++; }
-      const content = pattern.slice(i, j + 1);
-      const neg = content[1] === '^';
-      tokens.push({ t: 'char', v: neg ? '以外' : '文字', raw: content, cls: 'set' });
-      i = j + 1;
-    } else if (c === '(') {
-      let type = 'grp', skip = 1;
-      if (pattern.slice(i, i+3) === '(?:') { type = 'nc'; skip = 3; }
-      else if (pattern.slice(i, i+3) === '(?=') { type = 'la'; skip = 3; }
-      else if (pattern.slice(i, i+3) === '(?!') { type = 'nla'; skip = 3; }
-      else if (pattern.slice(i, i+4) === '(?<=') { type = 'lb'; skip = 4; }
-      else if (pattern.slice(i, i+5) === '(?<!') { type = 'nlb'; skip = 5; }
-      else { grp++; }
-      tokens.push({ t: 'gs', type, n: type === 'grp' ? grp : 0 });
-      i += skip;
-    } else if (c === ')') {
-      tokens.push({ t: 'ge' });
-      i++;
-    } else if (c === '|') {
-      tokens.push({ t: 'alt' });
-      i++;
-    } else if (c === '^') {
-      tokens.push({ t: 'char', v: '行頭', raw: '^', cls: 'anchor' });
-      i++;
-    } else if (c === '$') {
-      tokens.push({ t: 'char', v: '行末', raw: '$', cls: 'anchor' });
-      i++;
-    } else if (c === '.') {
-      tokens.push({ t: 'char', v: '任意', raw: '.', cls: 'meta' });
-      i++;
-    } else if ('*+?'.includes(c)) {
-      const lazy = pattern[i + 1] === '?';
-      const labels = { '*': '0回以上', '+': '1回以上', '?': '0〜1回' };
-      tokens.push({ t: 'q', v: c, label: labels[c] + (lazy ? ' (最短)' : ''), min: c === '+' ? 1 : 0, lazy });
-      i += lazy ? 2 : 1;
-    } else if (c === '{') {
-      let j = i + 1;
-      while (j < pattern.length && pattern[j] !== '}') j++;
-      const lazy = pattern[j + 1] === '?';
-      const inner = pattern.slice(i + 1, j);
-      const parts = inner.split(',');
-      const min = parseInt(parts[0]) || 0;
-      let label;
-      if (parts.length === 1) label = `${parts[0]}回`;
-      else if (parts[1] === '') label = `${parts[0]}回以上`;
-      else label = `${parts[0]}〜${parts[1]}回`;
-      if (lazy) label += ' (最短)';
-      tokens.push({ t: 'q', v: pattern.slice(i, j + 1), label, min, lazy });
-      i = j + 1 + (lazy ? 1 : 0);
-    } else {
-      tokens.push({ t: 'char', v: c === ' ' ? '␣' : c, raw: c, cls: 'lit' });
-      i++;
-    }
+function escapeRegexXml(s) {
+  return String(s).replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+}
+
+function createRegexRenderer() {
+  const backgrounds = [];
+  const parts = [];
+  const edges = [];
+
+  const defs = `
+  <defs>
+    <marker id="regex-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#546E7A"></path>
+    </marker>
+    <marker id="regex-arrow-pink" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+      <path d="M0,0 L5,2.5 L0,5 Z" fill="#E91E63"></path>
+    </marker>
+  </defs>`;
+
+  function wire(points, arrow = false) {
+    const d = orthRoundedPath(points, RegexMetrics.corner);
+    edges.push(`<path class="wire" d="${d}" ${arrow ? 'marker-end="url(#regex-arrow)"' : ''}></path>`);
   }
-  
-  // 構造をパース
-  function parseTokens(tokens, start = 0) {
-    const branches = [[]];
-    let i = start;
-    
-    while (i < tokens.length) {
-      const tk = tokens[i];
-      if (tk.t === 'ge') return { branches, endIdx: i };
-      if (tk.t === 'alt') { branches.push([]); i++; continue; }
-      if (tk.t === 'gs') {
-        const inner = parseTokens(tokens, i + 1);
-        branches[branches.length - 1].push({ t: 'group', type: tk.type, n: tk.n, branches: inner.branches });
-        i = inner.endIdx + 1;
-        continue;
-      }
-      if (tk.t === 'q') {
-        const last = branches[branches.length - 1];
-        if (last.length > 0) last[last.length - 1].quant = tk;
-        i++;
-        continue;
-      }
-      branches[branches.length - 1].push(tk);
-      i++;
-    }
-    return { branches, endIdx: i };
+
+  function loop(points) {
+    const d = orthRoundedPath(points, RegexMetrics.corner + 2);
+    edges.push(`<path class="loop" d="${d}" marker-end="url(#regex-arrow-pink)"></path>`);
   }
-  
-  const structure = parseTokens(tokens);
-  
-  // 描画
-  let els = [];
-  let maxX = 0, maxY = 0;
-  const nodeH = 30;
-  const nodeMinW = 40;
-  const rowGap = 45;
-  const colGap = 15;
-  const headerH = 45;
-  const legendH = 35;
-  
-  function getGrad(cls) {
-    if (cls === 'meta') return 'gradMeta';
-    if (cls === 'set') return 'gradSet';
-    if (cls === 'anchor') return 'gradAnchor';
-    return 'gradLit';
+
+  function drawNodeBox(x, y, w, h, cls, txt, subtxt) {
+    const rx = 6;
+    const sx = snap(x);
+    const sy = snap(y);
+    const sw = snap(w);
+    const sh = snap(h);
+    if (cls === 'anchor') {
+      parts.push(`<g class="anchor"><rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="${rx}"></rect>
+        <text x="${snap(sx + sw / 2)}" y="${snap(sy + sh / 2 + 5)}" text-anchor="middle" font-size="14" fill="#fff" font-weight="700">${escapeRegexXml(txt)}</text>
+        ${subtxt ? `<text x="${snap(sx + sw / 2)}" y="${snap(sy + sh - 6)}" text-anchor="middle" font-size="9" class="mono" fill="rgba(255,255,255,0.85)">${escapeRegexXml(subtxt)}</text>` : ''}
+      </g>`);
+      return;
+    }
+
+    parts.push(`<g class="node"><rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="${rx}"></rect>
+      <text x="${snap(sx + sw / 2)}" y="${snap(sy + sh / 2 + 5)}" text-anchor="middle" font-size="13" font-weight="700" fill="#333">${escapeRegexXml(txt)}</text>
+    </g>`);
   }
-  
-  // ノード描画
-  function drawNode(node, x, y) {
-    const txt = node.v;
-    const raw = node.raw || '';
-    const tw = Math.max(txt.length * 11 + 16, raw.length * 7 + 12, nodeMinW);
-    
-    els.push(`<rect x="${x}" y="${y - nodeH/2}" width="${tw}" height="${nodeH}" rx="4" fill="url(#${getGrad(node.cls)})" stroke="${node.cls === 'anchor' ? '#5E35B1' : '#999'}" stroke-width="1"/>`);
-    els.push(`<text x="${x + tw/2}" y="${y + (raw && raw !== txt ? -3 : 4)}" text-anchor="middle" font-size="12" font-weight="bold" fill="${node.cls === 'anchor' ? '#fff' : '#333'}">${h(txt)}</text>`);
-    if (raw && raw !== txt) {
-      els.push(`<text x="${x + tw/2}" y="${y + 10}" text-anchor="middle" font-size="9" font-family="monospace" fill="${node.cls === 'anchor' ? 'rgba(255,255,255,0.8)' : '#888'}">${h(raw)}</text>`);
-    }
-    
-    maxX = Math.max(maxX, x + tw);
-    maxY = Math.max(maxY, y + nodeH/2);
-    return { w: tw, h: nodeH };
-  }
-  
-  // 分岐描画
-  function drawBranches(branches, startX, centerY, isRoot = false) {
-    const branchCount = branches.length;
-    const isMulti = branchCount > 1;
-    
-    // 各分岐の内容幅を事前計算
-    function calcBranchWidth(branch) {
-      let w = 0;
-      for (const node of branch) {
-        if (node.t === 'group') {
-          const innerW = Math.max(...node.branches.map(b => calcBranchWidth(b)));
-          w += innerW + 50;
-        } else {
-          const txt = node.v || '';
-          const raw = node.raw || '';
-          w += Math.max(txt.length * 11 + 16, raw.length * 7 + 12, nodeMinW) + colGap;
-        }
+
+  function place(node, x, yCenter) {
+    const m = measureRegex(node);
+
+    if (node.t === 'root') return place(node.ast, x, yCenter);
+
+    if (node.t === 'seq') {
+      if (node.items.length === 0) {
+        const inP = { x: snap(x), y: snap(yCenter) };
+        const outP = { x: snap(x + m.w), y: snap(yCenter) };
+        wire([inP, outP], true);
+        return { in: inP, out: outP };
       }
-      return Math.max(w, 40);
-    }
-    
-    const branchWidths = branches.map(calcBranchWidth);
-    const maxBranchW = Math.max(...branchWidths);
-    const totalH = isMulti ? (branchCount - 1) * rowGap : 0;
-    const topY = centerY - totalH / 2;
-    
-    // 分岐の開始X位置
-    const forkX = startX;
-    const nodeStartX = startX + (isMulti ? 20 : 0);
-    const joinX = nodeStartX + maxBranchW + 10;
-    const endX = joinX + (isMulti ? 15 : 0);
-    
-    // 分岐開始点
-    if (isMulti) {
-      els.push(`<circle cx="${forkX}" cy="${centerY}" r="5" fill="#546E7A"/>`);
-    }
-    
-    branches.forEach((branch, bi) => {
-      const branchY = isMulti ? topY + bi * rowGap : centerY;
-      let bx = nodeStartX;
-      
-      // 開始の曲線（分岐点からノードへ）
-      if (isMulti) {
-        const curveX = forkX + 10;
-        els.push(`<path d="M${forkX + 5},${centerY} L${curveX},${centerY} Q${curveX + 8},${centerY} ${curveX + 8},${branchY} L${bx},${branchY}" stroke="#546E7A" stroke-width="2" fill="none"/>`);
-      }
-      
-      maxY = Math.max(maxY, branchY + nodeH/2);
-      
-      // 分岐内のノード
-      branch.forEach((node, ni) => {
-        // 接続線（2番目以降のノード）
-        if (ni > 0) {
-          els.push(`<line x1="${bx - colGap + 3}" y1="${branchY}" x2="${bx}" y2="${branchY}" stroke="#546E7A" stroke-width="2" marker-end="url(#arrow)"/>`);
-        }
-        
-        if (node.t === 'group') {
-          const groupLabels = {
-            grp: `グループ #${node.n}`, nc: '非キャプチャ',
-            la: '先読み', nla: '否定先読み', lb: '後読み', nlb: '否定後読み'
-          };
-          
-          const innerH = Math.max((node.branches.length - 1) * rowGap + nodeH, nodeH + 20);
-          const inner = drawBranches(node.branches, bx + 15, branchY, false);
-          const gw = inner.w + 30;
-          const gh = innerH + 20;
-          
-          els.push(`<rect x="${bx}" y="${branchY - gh/2}" width="${gw}" height="${gh}" rx="6" fill="rgba(33,150,243,0.05)" stroke="#2196F3" stroke-width="2" stroke-dasharray="5,3"/>`);
-          els.push(`<text x="${bx + 8}" y="${branchY - gh/2 + 14}" font-size="10" fill="#1976D2" font-weight="bold">${groupLabels[node.type]}</text>`);
-          
-          // 量指定子
-          if (node.quant) {
-            const qy = branchY + gh/2 + 14;
-            els.push(`<text x="${bx + gw/2}" y="${qy}" text-anchor="middle" font-size="10" fill="#C2185B" font-weight="bold">${node.quant.label}</text>`);
-            els.push(`<path d="M${bx + gw - 8},${branchY - gh/2 + 8} C${bx + gw + 10},${branchY - gh/2 - 15} ${bx - 10},${branchY - gh/2 - 15} ${bx + 8},${branchY - gh/2 + 8}" stroke="#E91E63" stroke-width="1.5" fill="none" marker-end="url(#arrowPink)"/>`);
-            maxY = Math.max(maxY, qy + 5);
-          }
-          
-          bx += gw + colGap;
-          maxY = Math.max(maxY, branchY + gh/2);
-        } else {
-          const size = drawNode(node, bx, branchY);
-          
-          // 量指定子
-          if (node.quant) {
-            const qy = branchY + nodeH/2 + 12;
-            els.push(`<text x="${bx + size.w/2}" y="${qy}" text-anchor="middle" font-size="10" fill="#C2185B" font-weight="bold">${node.quant.label}</text>`);
-            els.push(`<path d="M${bx + size.w - 5},${branchY - nodeH/2 + 3} C${bx + size.w + 8},${branchY - nodeH/2 - 12} ${bx - 8},${branchY - nodeH/2 - 12} ${bx + 5},${branchY - nodeH/2 + 3}" stroke="#E91E63" stroke-width="1.5" fill="none" marker-end="url(#arrowPink)"/>`);
-            maxY = Math.max(maxY, qy + 5);
-          }
-          
-          bx += size.w + colGap;
-        }
+
+      let curX = x;
+      let firstPorts = null;
+      let prevOut = null;
+      node.items.forEach((child, idx) => {
+        const ports = place(child, curX, yCenter);
+        if (!firstPorts) firstPorts = ports;
+        if (prevOut) wire([prevOut, ports.in], true);
+        prevOut = ports.out;
+        curX += measureRegex(child).w + RegexMetrics.colGap;
       });
-      
-      // 終了の曲線（ノードから合流点へ）
-      if (isMulti) {
-        const curveX = joinX - 8;
-        els.push(`<path d="M${bx - 5},${branchY} L${curveX},${branchY} Q${curveX + 8},${branchY} ${curveX + 8},${centerY} L${joinX},${centerY}" stroke="#546E7A" stroke-width="2" fill="none"/>`);
-      }
-    });
-    
-    // 分岐終了点
-    if (isMulti) {
-      els.push(`<circle cx="${joinX}" cy="${centerY}" r="5" fill="#546E7A"/>`);
+      return { in: firstPorts.in, out: prevOut };
     }
-    
-    maxX = Math.max(maxX, endX);
-    return { w: endX - startX, h: totalH + nodeH };
+
+    if (node.t === 'anchor') {
+      const w = RegexMetrics.anchorW;
+      const h = RegexMetrics.anchorH;
+      const top = yCenter - h / 2;
+      const sx = snap(x);
+      const sy = snap(top);
+      const sw = snap(w);
+      const sh = snap(h);
+      const centerY = snap(sy + sh / 2);
+      drawNodeBox(x, top, w, h, 'anchor', node.v === '^' ? '行頭' : '行末', node.v);
+      return { in: { x: sx, y: centerY }, out: { x: snap(sx + sw), y: centerY } };
+    }
+
+    if (node.t === 'lit' || node.t === 'meta' || node.t === 'class') {
+      const w = measureRegex(node).w;
+      const h = RegexMetrics.nodeH;
+      const top = yCenter - h / 2;
+      const sx = snap(x);
+      const sy = snap(top);
+      const sw = snap(w);
+      const sh = snap(h);
+      const centerY = snap(sy + sh / 2);
+      const txt = node.t === 'class' ? node.raw : node.v;
+      drawNodeBox(x, top, w, h, 'node', txt);
+      return { in: { x: sx, y: centerY }, out: { x: snap(sx + sw), y: centerY } };
+    }
+
+    if (node.t === 'empty') {
+      const inP = { x: snap(x), y: snap(yCenter) };
+      const outP = { x: snap(x + m.w), y: snap(yCenter) };
+      wire([inP, outP], true);
+      return { in: inP, out: outP };
+    }
+
+    if (node.t === 'alt') {
+      const inP = { x: snap(x), y: snap(yCenter) };
+      const outP = { x: snap(x + m.w), y: snap(yCenter) };
+      const splitX = snap(x + RegexMetrics.railInset);
+      const mergeX = snap(x + m.w - RegexMetrics.railInset);
+
+      wire([inP, { x: splitX, y: yCenter }]);
+      wire([{ x: mergeX, y: yCenter }, outP]);
+
+      const count = node.branches.length;
+      const topY = yCenter - ((count - 1) * RegexMetrics.rowGap) / 2;
+
+      node.branches.forEach((branch, bi) => {
+        const by = topY + bi * RegexMetrics.rowGap;
+        const brStart = { x: splitX, y: by };
+        const brEnd = { x: mergeX, y: by };
+        const bx = splitX + 10;
+        const ports = place(branch, bx, by);
+        wire([brStart, { x: brStart.x, y: ports.in.y }, ports.in]);
+        wire([ports.out, { x: brEnd.x, y: ports.out.y }, brEnd]);
+      });
+
+      wire([{ x: mergeX, y: yCenter }, outP], true);
+      return { in: inP, out: outP };
+    }
+
+    if (node.t === 'group') {
+      const gm = measureRegex(node);
+      const boxX = x;
+      const boxY = yCenter - gm.h / 2;
+      const gin = { x: snap(boxX), y: snap(yCenter) };
+      const gout = { x: snap(boxX + gm.w), y: snap(yCenter) };
+
+      backgrounds.push(`<g class="group"><rect x="${snap(boxX)}" y="${snap(boxY)}" width="${snap(gm.w)}" height="${snap(gm.h)}" rx="8"></rect></g>`);
+      parts.push(`<text class="label" x="${snap(boxX + 10)}" y="${snap(boxY + 16)}">グループ</text>`);
+
+      const innerX = boxX + RegexMetrics.groupPad + RegexMetrics.railInset;
+      const innerPorts = place(node.inner, innerX, yCenter);
+      wire([gin, innerPorts.in], true);
+      wire([innerPorts.out, gout], true);
+      return { in: gin, out: gout };
+    }
+
+    if (node.t === 'quant') {
+      const atomMetrics = measureRegex(node.atom);
+      const layout = quantLayout(node.q, atomMetrics.h);
+      const atomCenterY = yCenter + layout.atomCenterOffset;
+      const ports = place(node.atom, x, atomCenterY);
+      const inP = ports.in;
+      const outP = ports.out;
+      const q = node.q;
+      const label = labelForQuant(q);
+
+      if (layout.allowZero) wire([inP, outP], true);
+      if (layout.allowMany) {
+        const topY = snap(yCenter + layout.loopTopY);
+        loop([outP, { x: outP.x, y: topY }, { x: inP.x, y: topY }, inP]);
+      }
+
+      parts.push(`<text class="quant" x="${snap((inP.x + outP.x) / 2)}" y="${snap(yCenter + layout.labelOffset)}" text-anchor="middle">${escapeRegexXml(label)}</text>`);
+      return { in: inP, out: outP };
+    }
+
+    const w = RegexMetrics.litW;
+    const h = RegexMetrics.nodeH;
+    const top = yCenter - h / 2;
+    const sx = snap(x);
+    const sy = snap(top);
+    const sw = snap(w);
+    const sh = snap(h);
+    const centerY = snap(sy + sh / 2);
+    drawNodeBox(x, top, w, h, 'node', '?');
+    return { in: { x: sx, y: centerY }, out: { x: snap(sx + sw), y: centerY } };
   }
-  
-  // メイン描画
-  const baseY = headerH + 50;
-  let x = 60;
-  
-  // 開始
-  els.push(`<circle cx="25" cy="${baseY}" r="10" fill="url(#gradStart)"/>`);
-  els.push(`<text x="25" y="${baseY + 4}" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">開始</text>`);
-  els.push(`<line x1="35" y1="${baseY}" x2="50" y2="${baseY}" stroke="#546E7A" stroke-width="2" marker-end="url(#arrow)"/>`);
-  
-  // コンテンツ
-  const result = drawBranches(structure.branches, x, baseY, true);
-  x += result.w + 10;
-  
-  // 終了
-  els.push(`<line x1="${x - 5}" y1="${baseY}" x2="${x + 10}" y2="${baseY}" stroke="#546E7A" stroke-width="2" marker-end="url(#arrow)"/>`);
-  els.push(`<circle cx="${x + 22}" cy="${baseY}" r="10" fill="url(#gradEnd)"/>`);
-  els.push(`<text x="${x + 22}" y="${baseY + 4}" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold">終了</text>`);
-  
-  maxX = Math.max(maxX, x + 45);
-  
-  const svgW = Math.max(maxX + 20, 320);
-  const svgH = maxY + legendH + 25;
-  
-  // 凡例
-  const legY = svgH - legendH + 5;
-  const legends = [
-    { x: 15, color: '#FFE082', label: '文字' },
-    { x: 75, color: '#90CAF9', label: 'メタ文字' },
-    { x: 155, color: '#CE93D8', label: '文字クラス' },
-    { x: 245, color: '#7E57C2', label: 'アンカー' },
-  ];
-  
-  els.push(`<line x1="10" y1="${legY - 10}" x2="${svgW - 10}" y2="${legY - 10}" stroke="#E0E0E0" stroke-width="1"/>`);
-  els.push(`<text x="15" y="${legY + 5}" font-size="9" fill="#666">凡例:</text>`);
-  
-  legends.forEach((leg, i) => {
-    const lx = 50 + i * 70;
-    els.push(`<rect x="${lx}" y="${legY - 5}" width="12" height="12" rx="2" fill="${leg.color}"/>`);
-    els.push(`<text x="${lx + 16}" y="${legY + 5}" font-size="9" fill="#666">${leg.label}</text>`);
-  });
-  
-  // ピンク矢印の説明
-  els.push(`<path d="M${svgW - 95},${legY} L${svgW - 80},${legY}" stroke="#E91E63" stroke-width="1.5" marker-end="url(#arrowPink)"/>`);
-  els.push(`<text x="${svgW - 75}" y="${legY + 4}" font-size="9" fill="#666">繰り返し</text>`);
-  
-  return `<svg width="${svgW}" height="${svgH}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-        <path d="M0,0 L6,3 L0,6 Z" fill="#546E7A"/>
-      </marker>
-      <marker id="arrowPink" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
-        <path d="M0,0 L5,2.5 L0,5 Z" fill="#E91E63"/>
-      </marker>
-      <linearGradient id="gradStart" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stop-color="#66BB6A"/><stop offset="100%" stop-color="#43A047"/>
-      </linearGradient>
-      <linearGradient id="gradEnd" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stop-color="#78909C"/><stop offset="100%" stop-color="#546E7A"/>
-      </linearGradient>
-      <linearGradient id="gradLit" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stop-color="#FFF8E1"/><stop offset="100%" stop-color="#FFE082"/>
-      </linearGradient>
-      <linearGradient id="gradMeta" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stop-color="#E3F2FD"/><stop offset="100%" stop-color="#90CAF9"/>
-      </linearGradient>
-      <linearGradient id="gradSet" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stop-color="#F3E5F5"/><stop offset="100%" stop-color="#CE93D8"/>
-      </linearGradient>
-      <linearGradient id="gradAnchor" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stop-color="#7E57C2"/><stop offset="100%" stop-color="#5E35B1"/>
-      </linearGradient>
-    </defs>
-    <rect width="100%" height="100%" fill="#FAFAFA" rx="6"/>
-    <text x="15" y="20" font-size="12" fill="#333">
-      <tspan fill="#78909C">正規表現: </tspan>
-      <tspan font-family="monospace" font-weight="bold" fill="#5E35B1">/${h(pattern)}/</tspan>
-    </text>
-    <line x1="10" y1="30" x2="${svgW - 10}" y2="30" stroke="#E0E0E0" stroke-width="1"/>
-    ${els.join('\n    ')}
-  </svg>`;
+
+  function build(ast, titleText) {
+    const m = measureRegex(ast);
+    const padX = RegexMetrics.padX;
+    const padY = RegexMetrics.padY;
+    const headerH = 34;
+    const width = snap(m.w + padX * 2);
+    const height = snap(m.h + padY * 2 + headerH + 30);
+    const startX = padX;
+    const centerY = padY + headerH + m.h / 2;
+
+    parts.push(`<text x="16" y="22" font-size="12" fill="#333"><tspan fill="#78909C">正規表現: </tspan><tspan class="mono" font-weight="700" fill="#5E35B1">${escapeRegexXml(titleText)}</tspan></text>`);
+    parts.push(`<line x1="10" y1="32" x2="${width - 10}" y2="32" stroke="#E0E0E0" stroke-width="1"></line>`);
+
+    const inP = { x: snap(startX), y: snap(centerY) };
+    const outP = { x: snap(startX + m.w), y: snap(centerY) };
+    parts.push(`<circle cx="${inP.x}" cy="${inP.y}" r="4" fill="#546E7A"></circle>`);
+    parts.push(`<circle cx="${outP.x}" cy="${outP.y}" r="4" fill="#546E7A"></circle>`);
+
+    place(ast, startX, centerY);
+
+    return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      ${defs}
+      <rect width="100%" height="100%" fill="#FAFAFA" rx="10"></rect>
+      ${backgrounds.join('')}
+      ${edges.join('')}
+      ${parts.join('')}
+    </svg>`;
+  }
+
+  return { build };
+}
+
+function buildRegexDiagram(patternInput) {
+  const parsed = parseRegex(patternInput);
+  const r = createRegexRenderer();
+  return r.build(parsed, patternInput);
+}
+
+function validateRegexForVisualization(rawPattern) {
+  const s = rawPattern.trim();
+  if (s.startsWith('/') && s.lastIndexOf('/') > 0) {
+    const last = s.lastIndexOf('/');
+    const body = s.slice(1, last);
+    const flags = s.slice(last + 1);
+    new RegExp(body, flags);
+    return;
+  }
+  const flags = getRegexFlags();
+  new RegExp(s, flags);
+}
+
+function setRegexVisualMessage(kind, text = '') {
+  const msg = document.getElementById('regex-visual-msg');
+  if (!msg) return;
+  msg.textContent = text;
+  msg.classList.remove('ok', 'err');
+  if (kind) msg.classList.add(kind);
+}
+
+function visualizeRegex() {
+  const raw = document.getElementById('regex-pattern').value;
+  const container = document.getElementById('regex-visual');
+
+  setRegexVisualMessage('', '');
+  if (!raw) {
+    container.innerHTML = '<span style="color:#888">パターンを入力してください</span>';
+    return;
+  }
+
+  try {
+    validateRegexForVisualization(raw);
+    container.innerHTML = buildRegexDiagram(raw);
+    setRegexVisualMessage('ok', 'OK');
+  } catch (e) {
+    container.innerHTML = `<span class="err">エラー: ${escapeRegexXml(e.message || e)}</span>`;
+    setRegexVisualMessage('err', 'ERR');
+  }
 }
 
 
