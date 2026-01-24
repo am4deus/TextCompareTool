@@ -1536,6 +1536,12 @@ function repairShiftedEqualLineRows(rows) {
     return !bEmpty && aEmpty;
   }
 
+  function isEqualRow(r) {
+    if (!r || !r.a || !r.b) return false;
+    if (r.a.tokens.length === 0 || r.b.tokens.length === 0) return false;
+    return rowText(r.a.tokens) === rowText(r.b.tokens);
+  }
+
   const out = rows.slice();
   function allSpacersBetween(start, end) {
     for (let k = start + 1; k < end; k++) {
@@ -1586,6 +1592,18 @@ function repairShiftedEqualLineRows(rows) {
     if (isSideOnly(row, 'a')) {
       const aText = rowText(row.a.tokens);
       if (!aText) continue;
+      let merged = false;
+      for (let j = i - 1; j >= 0 && j >= i - 3; j--) {
+        if (!allSpacersBetween(j, i)) continue;
+        if (isEqualRow(out[j]) && rowText(out[j].a.tokens) === aText) {
+          markSpacersBetween(j, i, 'a');
+          out.splice(i, 1);
+          i--;
+          merged = true;
+          break;
+        }
+      }
+      if (merged) continue;
       for (let j = i + 1; j < out.length && j <= i + 3; j++) {
         const candidate = out[j];
         if (!candidate) continue;
@@ -1603,6 +1621,18 @@ function repairShiftedEqualLineRows(rows) {
     } else if (isSideOnly(row, 'b')) {
       const bText = rowText(row.b.tokens);
       if (!bText) continue;
+      let merged = false;
+      for (let j = i - 1; j >= 0 && j >= i - 3; j--) {
+        if (!allSpacersBetween(j, i)) continue;
+        if (isEqualRow(out[j]) && rowText(out[j].b.tokens) === bText) {
+          markSpacersBetween(j, i, 'b');
+          out.splice(i, 1);
+          i--;
+          merged = true;
+          break;
+        }
+      }
+      if (merged) continue;
       for (let j = i + 1; j < out.length && j <= i + 3; j++) {
         const candidate = out[j];
         if (!candidate) continue;
