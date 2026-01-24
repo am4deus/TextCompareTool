@@ -1544,20 +1544,38 @@ function repairShiftedEqualLineRows(rows) {
     return true;
   }
 
-  function markSpacersBetween(start, end, side) {
+  function createNewlineRow(side) {
+    const row = { a: { tokens: [], isEmpty: true }, b: { tokens: [], isEmpty: true } };
+    if (side === 'a') {
+      row.a.tokens = [{ type: 'newline-delete', value: '↵' }];
+      row.a.isEmpty = false;
+    } else {
+      row.b.tokens = [{ type: 'newline-insert', value: '↵' }];
+      row.b.isEmpty = false;
+    }
+    return row;
+  }
+
+  function markSpacersBetween(start, end, primarySide) {
+    const spacerIndices = [];
     for (let k = start + 1; k < end; k++) {
-      if (!isSpacerRow(out[k])) continue;
-      if (side === 'a') {
-        out[k].a.tokens = [{ type: 'newline-delete', value: '↵' }];
-        out[k].b.tokens = [];
-        out[k].a.isEmpty = false;
-        out[k].b.isEmpty = true;
+      if (isSpacerRow(out[k])) spacerIndices.push(k);
+    }
+    if (!spacerIndices.length) return;
+
+    for (const idx of spacerIndices) {
+      if (isNewlineOnlyRow(out[idx])) continue;
+      if (primarySide === 'a') {
+        out[idx] = createNewlineRow('a');
       } else {
-        out[k].a.tokens = [];
-        out[k].b.tokens = [{ type: 'newline-insert', value: '↵' }];
-        out[k].a.isEmpty = true;
-        out[k].b.isEmpty = false;
+        out[idx] = createNewlineRow('b');
       }
+    }
+
+    if (spacerIndices.length === 1) {
+      const oppositeSide = primarySide === 'a' ? 'b' : 'a';
+      const insertAt = spacerIndices[0] + 1;
+      out.splice(insertAt, 0, createNewlineRow(oppositeSide));
     }
   }
 
@@ -1577,7 +1595,7 @@ function repairShiftedEqualLineRows(rows) {
           row.b.tokens = [{ type: 'equal', value: aText }];
           row.a.isEmpty = false;
           row.b.isEmpty = false;
-          markSpacersBetween(i, j, 'b');
+          markSpacersBetween(i, j, 'a');
           out.splice(j, 1);
           break;
         }
@@ -1594,7 +1612,7 @@ function repairShiftedEqualLineRows(rows) {
           row.b.tokens = [{ type: 'equal', value: bText }];
           row.a.isEmpty = false;
           row.b.isEmpty = false;
-          markSpacersBetween(i, j, 'a');
+          markSpacersBetween(i, j, 'b');
           out.splice(j, 1);
           break;
         }
