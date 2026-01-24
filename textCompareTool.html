@@ -1506,7 +1506,84 @@ function buildRowsByLines(textA, textB) {
     i = j - 1;
   }
 
-  return rows;
+  return repairShiftedEqualLineRows(rows);
+}
+
+// 行比較で「同一行が空行差分を挟んでズレて表示される」ケースを補正
+function repairShiftedEqualLineRows(rows) {
+  function rowText(tokens) {
+    if (!tokens || !tokens.length) return '';
+    return tokens.map(t => t.value || '').join('');
+  }
+
+  function isNewlineOnlyRow(r) {
+    const aLen = r.a.tokens.length;
+    const bLen = r.b.tokens.length;
+    const aNewlineOnly = (aLen === 1 && r.a.tokens[0].type && String(r.a.tokens[0].type).startsWith('newline') && bLen === 0);
+    const bNewlineOnly = (bLen === 1 && r.b.tokens[0].type && String(r.b.tokens[0].type).startsWith('newline') && aLen === 0);
+    return aNewlineOnly || bNewlineOnly;
+  }
+
+  function isSpacerRow(r) {
+    if (isNewlineOnlyRow(r)) return true;
+    return rowText(r.a.tokens) === '' && rowText(r.b.tokens) === '';
+  }
+
+  function isSideOnly(r, side) {
+    const aEmpty = r.a.tokens.length === 0;
+    const bEmpty = r.b.tokens.length === 0;
+    if (side === 'a') return !aEmpty && bEmpty;
+    return !bEmpty && aEmpty;
+  }
+
+  const out = rows.slice();
+  function allSpacersBetween(start, end) {
+    for (let k = start + 1; k < end; k++) {
+      if (!isSpacerRow(out[k])) return false;
+    }
+    return true;
+  }
+
+  for (let i = 0; i < out.length; i++) {
+    const row = out[i];
+    if (!row || !row.a || !row.b) continue;
+
+    if (isSideOnly(row, 'a')) {
+      const aText = rowText(row.a.tokens);
+      if (!aText) continue;
+      for (let j = i + 1; j < out.length && j <= i + 3; j++) {
+        const candidate = out[j];
+        if (!candidate) continue;
+        if (!allSpacersBetween(i, j)) continue;
+        if (isSideOnly(candidate, 'b') && rowText(candidate.b.tokens) === aText) {
+          row.a.tokens = [{ type: 'equal', value: aText }];
+          row.b.tokens = [{ type: 'equal', value: aText }];
+          row.a.isEmpty = false;
+          row.b.isEmpty = false;
+          out.splice(j, 1);
+          break;
+        }
+      }
+    } else if (isSideOnly(row, 'b')) {
+      const bText = rowText(row.b.tokens);
+      if (!bText) continue;
+      for (let j = i + 1; j < out.length && j <= i + 3; j++) {
+        const candidate = out[j];
+        if (!candidate) continue;
+        if (!allSpacersBetween(i, j)) continue;
+        if (isSideOnly(candidate, 'a') && rowText(candidate.a.tokens) === bText) {
+          row.a.tokens = [{ type: 'equal', value: bText }];
+          row.b.tokens = [{ type: 'equal', value: bText }];
+          row.a.isEmpty = false;
+          row.b.isEmpty = false;
+          out.splice(j, 1);
+          break;
+        }
+      }
+    }
+  }
+
+  return out;
 }
 
 
