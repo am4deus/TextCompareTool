@@ -1486,8 +1486,7 @@ function buildRowsByLines(textA, textB) {
         }
 
         const tokenDiff = generateDiff(tokenize(aLine), tokenize(bLine));
-        const aTokens = diffTokensToRowTokens(tokenDiff, 'delete');
-        const bTokens = diffTokensToRowTokens(tokenDiff, 'insert');
+        const { aTokens, bTokens } = diffTokensToRowTokens(tokenDiff);
 
         pushRow(aTokens, bTokens);
       }
