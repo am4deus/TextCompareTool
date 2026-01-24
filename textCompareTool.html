@@ -3297,7 +3297,7 @@ function test_chars_repair_does_not_split_it_will_by_newline_move() {
 
 
 function test_line_replace_block_alignment() {
-  _tLogStart("test_line_replace_block_alignment");
+  const t0 = _tLogStart("test_line_replace_block_alignment");
 
   const A =
 "    from: { row: 1, column: 1 },\n" +
@@ -3345,12 +3345,12 @@ function test_line_replace_block_alignment() {
   _tAssert(hasDeleteReplace, '[TEST] Expected "delete:" line to be aligned as a replace-row (both sides non-empty)');
   _tAssert(hasInsertReplace, '[TEST] Expected "insert:" line to be aligned as a replace-row (both sides non-empty)');
 
-  _tLogOk("test_line_replace_block_alignment");
+  _tLogEnd(t0);
 }
 
 
 function test_hybrid_align_shifted_similar_lines() {
-  _tLogTestStart("Hybrid: align shifted similar lines (But a bit...)");
+  const t0 = _tLogStart("Hybrid: align shifted similar lines (But a bit...)");
 
   const A = [
     "If I put it in my batter,",
@@ -3377,7 +3377,7 @@ function test_hybrid_align_shifted_similar_lines() {
   }
   _tAssert(ok, '[TEST] Expected "But a bit of better butter" to align in the same row (A and B).');
 
-  _tLogTestPass("Hybrid: align shifted similar lines (But a bit...)");
+  _tLogEnd(t0);
 }
 
 
