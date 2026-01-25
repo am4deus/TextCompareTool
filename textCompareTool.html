@@ -811,6 +811,69 @@ body.result-only-mode .results-section {
   font-weight: 600;
 }
 
+/* Location pane */
+.location-pane {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.location-pane-title {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.location-pane-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.location-pane-status {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-width: 80px;
+}
+
+.location-pane-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  flex: 1;
+}
+
+.location-pane-list button {
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.location-pane-list button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.diff-row.current-diff-row td {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-glow);
+}
+
 /* Font size control */
 .text-settings {
   position: relative;
@@ -1085,6 +1148,17 @@ footer a:hover {
           </div>
         </div>
       </div>
+    </div>
+    <div class="location-pane" id="locationPane">
+      <div class="location-pane-title">ロケーションペイン</div>
+      <div class="location-pane-controls">
+        <button class="btn-secondary btn-small" id="diffFirstBtn" onclick="jumpToDiff('first')">最初の差異</button>
+        <button class="btn-secondary btn-small" id="diffPrevBtn" onclick="jumpToDiff('prev')">前の差異</button>
+        <button class="btn-secondary btn-small" id="diffNextBtn" onclick="jumpToDiff('next')">次の差異</button>
+        <button class="btn-secondary btn-small" id="diffLastBtn" onclick="jumpToDiff('last')">最後の差異</button>
+        <span class="location-pane-status" id="diffLocationStatus">差異 0 / 0</span>
+      </div>
+      <div class="location-pane-list" id="diffLocationList"></div>
     </div>
     <div class="diff-container">
       <table class="diff-table" id="diffTable">
@@ -3367,6 +3441,8 @@ function toggleDiffOnly() {
 
 // 結果のみ表示（印刷用）トグル
 let resultOnlyMode = false;
+let diffRowElements = [];
+let currentDiffIndex = -1;
 
 function updateResultOnlyButton() {
   const btn = document.getElementById('toggleResultOnlyBtn');
@@ -3385,6 +3461,100 @@ function toggleResultOnly() {
   resultOnlyMode = !resultOnlyMode;
   document.body.classList.toggle('result-only-mode', resultOnlyMode);
   updateResultOnlyButton();
+}
+
+function updateDiffLocationStatus() {
+  const statusEl = document.getElementById('diffLocationStatus');
+  if (!statusEl) return;
+  const total = diffRowElements.length;
+  const current = currentDiffIndex >= 0 ? currentDiffIndex + 1 : 0;
+  statusEl.textContent = `差異 ${current} / ${total}`;
+}
+
+function updateDiffLocationControls() {
+  const hasDiffs = diffRowElements.length > 0;
+  const firstBtn = document.getElementById('diffFirstBtn');
+  const prevBtn = document.getElementById('diffPrevBtn');
+  const nextBtn = document.getElementById('diffNextBtn');
+  const lastBtn = document.getElementById('diffLastBtn');
+  if (firstBtn) firstBtn.disabled = !hasDiffs;
+  if (prevBtn) prevBtn.disabled = !hasDiffs;
+  if (nextBtn) nextBtn.disabled = !hasDiffs;
+  if (lastBtn) lastBtn.disabled = !hasDiffs;
+}
+
+function setCurrentDiffIndex(index, options = { scroll: true }) {
+  if (diffRowElements.length === 0) {
+    currentDiffIndex = -1;
+    updateDiffLocationStatus();
+    updateDiffLocationControls();
+    return;
+  }
+
+  const clamped = Math.max(0, Math.min(index, diffRowElements.length - 1));
+  if (currentDiffIndex >= 0 && diffRowElements[currentDiffIndex]) {
+    diffRowElements[currentDiffIndex].classList.remove('current-diff-row');
+  }
+  currentDiffIndex = clamped;
+  const row = diffRowElements[currentDiffIndex];
+  if (row) {
+    row.classList.add('current-diff-row');
+    if (options.scroll) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+  updateDiffLocationStatus();
+  updateDiffLocationControls();
+}
+
+function updateLocationPane() {
+  const listEl = document.getElementById('diffLocationList');
+  if (!listEl) return;
+
+  diffRowElements = Array.from(document.querySelectorAll('#diffBody tr.diff-row'));
+  listEl.innerHTML = '';
+
+  diffRowElements.forEach((row, index) => {
+    const lineNum = row.dataset.lineNum || String(index + 1);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = `#${lineNum}`;
+    btn.title = `${lineNum}行目の差異へ移動`;
+    btn.addEventListener('click', () => setCurrentDiffIndex(index));
+    listEl.appendChild(btn);
+  });
+
+  if (diffRowElements.length > 0) {
+    setCurrentDiffIndex(0, { scroll: false });
+  } else {
+    currentDiffIndex = -1;
+    updateDiffLocationStatus();
+    updateDiffLocationControls();
+  }
+}
+
+function jumpToDiff(direction) {
+  if (diffRowElements.length === 0) return;
+  if (currentDiffIndex === -1) {
+    setCurrentDiffIndex(0);
+    return;
+  }
+  switch (direction) {
+    case 'first':
+      setCurrentDiffIndex(0);
+      break;
+    case 'prev':
+      setCurrentDiffIndex(currentDiffIndex - 1);
+      break;
+    case 'next':
+      setCurrentDiffIndex(currentDiffIndex + 1);
+      break;
+    case 'last':
+      setCurrentDiffIndex(diffRowElements.length - 1);
+      break;
+    default:
+      break;
+  }
 }
 
 // メイン比較関数
@@ -3434,6 +3604,8 @@ function renderComparisonRows(rows, textA, textB, hasDiff) {
       if (!rowHasDiff) {
         tr.classList.add('no-diff-row');
       } else {
+        tr.classList.add('diff-row');
+        tr.dataset.lineNum = String(lineNum);
         // 差分カウント
         deleteCount += row.a.tokens.filter(t => t.type === 'delete').length;
         insertCount += row.b.tokens.filter(t => t.type === 'insert').length;
@@ -3503,6 +3675,7 @@ function renderComparisonRows(rows, textA, textB, hasDiff) {
   // 差分のみ表示の状態を反映
   document.getElementById('results').classList.toggle('diff-only-mode', onlyDiffMode);
   updateDiffOnlyButton();
+  updateLocationPane();
   document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
 }
@@ -3895,6 +4068,12 @@ function clearAll() {
   document.getElementById('textA').value = '';
   document.getElementById('textB').value = '';
   document.getElementById('results').classList.remove('visible');
+  diffRowElements = [];
+  currentDiffIndex = -1;
+  updateDiffLocationStatus();
+  updateDiffLocationControls();
+  const listEl = document.getElementById('diffLocationList');
+  if (listEl) listEl.innerHTML = '';
 }
 
 // サンプルテキストを読み込み
