@@ -811,6 +811,85 @@ body.result-only-mode .results-section {
   font-weight: 600;
 }
 
+/* Location pane */
+.diff-layout {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.location-pane {
+  width: 48px;
+  min-width: 48px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+}
+
+.location-pane-title {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  letter-spacing: 0.08em;
+}
+
+.location-pane-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.location-pane-controls button {
+  padding: 2px 4px;
+  font-size: 0.65rem;
+}
+
+.location-pane-status {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.location-pane-bar {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--surface-raised), var(--surface));
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.location-pane-marker {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0.6;
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.location-pane-marker.current {
+  height: 4px;
+  opacity: 1;
+  background: var(--insert);
+}
+
+.diff-row.current-diff-row td {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-glow);
+}
+
 /* Font size control */
 .text-settings {
   position: relative;
@@ -1002,9 +1081,8 @@ footer a:hover {
   <div class="actions">
     <div class="compare-method-group">
       <select id="compareMethod" class="compare-method-select">
-        <option value="hybrid" selected>ハイブリッド比較</option>
+        <option value="compare" selected>比較</option>
         <option value="line">行比較</option>
-        <option value="chars">文字比較</option>
         <option value="charsLegacy">文字比較（レガシー）</option>
       </select>
       <button class="btn-primary" onclick="compare()">比較する (Ctrl+Enter)</button>
@@ -1087,18 +1165,31 @@ footer a:hover {
         </div>
       </div>
     </div>
-    <div class="diff-container">
-      <table class="diff-table" id="diffTable">
-        <thead>
-          <tr>
-            <th class="line-num-col">#</th>
-            <th>テキスト A</th>
-            <th>テキスト B</th>
-          </tr>
-        </thead>
-        <tbody id="diffBody">
-        </tbody>
-      </table>
+    <div class="diff-layout">
+      <div class="location-pane" id="locationPane">
+        <div class="location-pane-title">ロケーション</div>
+        <div class="location-pane-controls">
+          <button class="btn-secondary btn-small" id="diffFirstBtn" onclick="jumpToDiff('first')" title="最初の差異">▲</button>
+          <button class="btn-secondary btn-small" id="diffPrevBtn" onclick="jumpToDiff('prev')" title="前の差異">△</button>
+          <button class="btn-secondary btn-small" id="diffNextBtn" onclick="jumpToDiff('next')" title="次の差異">▽</button>
+          <button class="btn-secondary btn-small" id="diffLastBtn" onclick="jumpToDiff('last')" title="最後の差異">▼</button>
+        </div>
+        <div class="location-pane-bar" id="diffLocationBar"></div>
+        <div class="location-pane-status" id="diffLocationStatus">差異 0 / 0</div>
+      </div>
+      <div class="diff-container">
+        <table class="diff-table" id="diffTable">
+          <thead>
+            <tr>
+              <th class="line-num-col">#</th>
+              <th>テキスト A</th>
+              <th>テキスト B</th>
+            </tr>
+          </thead>
+          <tbody id="diffBody">
+          </tbody>
+        </table>
+      </div>
     </div>
   </section>
 
@@ -1895,15 +1986,14 @@ self.onmessage = function(e) {
       case 'line':
         rows = compareLineWorker(textA, textB, progressFn);
         break;
-      case 'chars':
-        rows = compareCharsWorker(textA, textB, progressFn);
-        break;
       case 'charsLegacy':
         rows = compareCharsLegacyWorker(textA, textB, progressFn);
         break;
+      case 'compare':
       case 'hybrid':
+      case 'chars':
       default:
-        rows = buildRowsByLinesWorker(textA, textB, progressFn);
+        rows = compareCharsWorker(textA, textB, progressFn);
         break;
     }
     
@@ -3369,6 +3459,35 @@ function toggleDiffOnly() {
 
 // 結果のみ表示（印刷用）トグル
 let resultOnlyMode = false;
+let diffRowElements = [];
+let diffMarkers = [];
+let totalRowCount = 0;
+let currentDiffIndex = -1;
+let isLocationDragging = false;
+
+function findNearestDiffIndexByRatio(ratio) {
+  if (diffRowElements.length === 0) return -1;
+  let bestIndex = 0;
+  let bestDistance = Infinity;
+  for (let i = 0; i < diffRowElements.length; i++) {
+    const rowIndex = Number(diffRowElements[i].dataset.rowIndex || 0);
+    const dist = Math.abs(rowIndex - ratio);
+    if (dist < bestDistance) {
+      bestDistance = dist;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+function findNearestDiffIndexByY(clientY, barEl) {
+  const rect = barEl.getBoundingClientRect();
+  if (totalRowCount === 0 || rect.height === 0) return -1;
+  const clampedY = Math.min(rect.bottom, Math.max(rect.top, clientY));
+  const ratio = (clampedY - rect.top) / rect.height;
+  const rowPosition = ratio * Math.max(0, totalRowCount - 1);
+  return findNearestDiffIndexByRatio(rowPosition);
+}
 
 function updateResultOnlyButton() {
   const btn = document.getElementById('toggleResultOnlyBtn');
@@ -3387,6 +3506,137 @@ function toggleResultOnly() {
   resultOnlyMode = !resultOnlyMode;
   document.body.classList.toggle('result-only-mode', resultOnlyMode);
   updateResultOnlyButton();
+}
+
+function updateDiffLocationStatus() {
+  const statusEl = document.getElementById('diffLocationStatus');
+  if (!statusEl) return;
+  const total = diffRowElements.length;
+  const current = currentDiffIndex >= 0 ? currentDiffIndex + 1 : 0;
+  statusEl.textContent = `差異 ${current} / ${total}`;
+}
+
+function updateDiffLocationControls() {
+  const hasDiffs = diffRowElements.length > 0;
+  const firstBtn = document.getElementById('diffFirstBtn');
+  const prevBtn = document.getElementById('diffPrevBtn');
+  const nextBtn = document.getElementById('diffNextBtn');
+  const lastBtn = document.getElementById('diffLastBtn');
+  if (firstBtn) firstBtn.disabled = !hasDiffs;
+  if (prevBtn) prevBtn.disabled = !hasDiffs;
+  if (nextBtn) nextBtn.disabled = !hasDiffs;
+  if (lastBtn) lastBtn.disabled = !hasDiffs;
+}
+
+function setCurrentDiffIndex(index, options = { scroll: true }) {
+  if (diffRowElements.length === 0) {
+    currentDiffIndex = -1;
+    updateDiffLocationStatus();
+    updateDiffLocationControls();
+    return;
+  }
+
+  const clamped = Math.max(0, Math.min(index, diffRowElements.length - 1));
+  if (currentDiffIndex >= 0 && diffRowElements[currentDiffIndex]) {
+    diffRowElements[currentDiffIndex].classList.remove('current-diff-row');
+  }
+  if (currentDiffIndex >= 0 && diffMarkers[currentDiffIndex]) {
+    diffMarkers[currentDiffIndex].classList.remove('current');
+  }
+  currentDiffIndex = clamped;
+  const row = diffRowElements[currentDiffIndex];
+  const marker = diffMarkers[currentDiffIndex];
+  if (row) {
+    row.classList.add('current-diff-row');
+    if (options.scroll) {
+      if (row.id) {
+        location.hash = row.id;
+      }
+      row.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+  if (marker) {
+    marker.classList.add('current');
+  }
+  updateDiffLocationStatus();
+  updateDiffLocationControls();
+}
+
+function updateLocationPane() {
+  const barEl = document.getElementById('diffLocationBar');
+  if (!barEl) return;
+
+  const rowsAll = Array.from(document.querySelectorAll('#diffBody tr')).filter(row => !row.classList.contains('stats-row'));
+  totalRowCount = rowsAll.length;
+  diffRowElements = rowsAll.filter(row => row.classList.contains('diff-row'));
+  diffMarkers = [];
+  barEl.innerHTML = '';
+
+  const totalRows = rowsAll.length;
+  diffRowElements.forEach((row, index) => {
+    const marker = document.createElement('div');
+    marker.className = 'location-pane-marker';
+    const rowIndex = Number(row.dataset.rowIndex || 0);
+    const ratio = totalRows > 1 ? rowIndex / (totalRows - 1) : 0;
+    marker.style.top = `${ratio * 100}%`;
+    marker.title = `${row.dataset.lineNum || index + 1}行目の差異へ移動`;
+    marker.addEventListener('click', () => setCurrentDiffIndex(index));
+    diffMarkers.push(marker);
+    barEl.appendChild(marker);
+  });
+
+  const handleBarSelection = (event) => {
+    if (diffRowElements.length === 0) return;
+    const nearestIndex = findNearestDiffIndexByY(event.clientY, barEl);
+    if (nearestIndex >= 0) {
+      setCurrentDiffIndex(nearestIndex);
+    }
+  };
+
+  barEl.onclick = handleBarSelection;
+  barEl.onmousedown = (event) => {
+    isLocationDragging = true;
+    handleBarSelection(event);
+  };
+  window.onmouseup = () => {
+    isLocationDragging = false;
+  };
+  window.onmousemove = (event) => {
+    if (!isLocationDragging) return;
+    handleBarSelection(event);
+  };
+
+  if (diffRowElements.length > 0) {
+    setCurrentDiffIndex(0, { scroll: false });
+  } else {
+    currentDiffIndex = -1;
+    updateDiffLocationStatus();
+    updateDiffLocationControls();
+  }
+}
+
+function jumpToDiff(direction) {
+  if (diffRowElements.length === 0) return;
+  if (currentDiffIndex === -1) {
+    setCurrentDiffIndex(0);
+    return;
+  }
+  switch (direction) {
+    case 'first':
+      setCurrentDiffIndex(0);
+      break;
+    case 'prev':
+      setCurrentDiffIndex(currentDiffIndex - 1);
+      break;
+    case 'next':
+      setCurrentDiffIndex(currentDiffIndex + 1);
+      break;
+    case 'last':
+      setCurrentDiffIndex(diffRowElements.length - 1);
+      break;
+    default:
+      break;
+  }
 }
 
 // メイン比較関数
@@ -3422,6 +3672,7 @@ function renderComparisonRows(rows, textA, textB, hasDiff) {
     let lineNum = 1;
     for (const row of rows) {
       const tr = document.createElement('tr');
+      tr.dataset.rowIndex = String(lineNum - 1);
 
       // BLANK行（内部マーカー）を検出して非表示にする
       const aText = row.a.tokens.map(t => t.value || '').join('');
@@ -3436,6 +3687,9 @@ function renderComparisonRows(rows, textA, textB, hasDiff) {
       if (!rowHasDiff) {
         tr.classList.add('no-diff-row');
       } else {
+        tr.classList.add('diff-row');
+        tr.dataset.lineNum = String(lineNum);
+        tr.id = `diff-row-${lineNum}`;
         // 差分カウント
         deleteCount += row.a.tokens.filter(t => t.type === 'delete').length;
         insertCount += row.b.tokens.filter(t => t.type === 'insert').length;
@@ -3505,6 +3759,7 @@ function renderComparisonRows(rows, textA, textB, hasDiff) {
   // 差分のみ表示の状態を反映
   document.getElementById('results').classList.toggle('diff-only-mode', onlyDiffMode);
   updateDiffOnlyButton();
+  updateLocationPane();
   document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
 }
@@ -3560,10 +3815,10 @@ function compare() {
       `処理に非常に時間がかかる場合があります。`,
       [
         {
-          text: '文字比較に切替',
+          text: '比較に切替',
           primary: true,
           action: () => {
-            document.getElementById('compareMethod').value = 'chars';
+            document.getElementById('compareMethod').value = 'compare';
             compare();
           }
         },
@@ -3596,19 +3851,17 @@ function compare() {
     case 'line':
       rows = _normalizeRowsTokens(buildRowsForLineCompare(textA, textB));
       break;
-    case 'chars':
-      rows = _normalizeRowsTokens(buildRowsByLines(textA, textB));
-      break;
     case 'charsLegacy':
       const tokensA = tokenize(textA);
       const tokensB = tokenize(textB);
       const diff = generateDiff(tokensA, tokensB);
       rows = renderDiffLegacy(diff);
       break;
+    case 'compare':
     case 'hybrid':
+    case 'chars':
     default:
-      const result = computeHybridRows(textA, textB);
-      rows = _normalizeRowsTokens(result.rows);
+      rows = _normalizeRowsTokens(buildRowsByLines(textA, textB));
       break;
   }
   
@@ -3710,7 +3963,7 @@ function executeCompareWithWorker(textA, textB, method) {
 
 // 旧関数（互換性のため残す）
 function compareChars() {
-  document.getElementById('compareMethod').value = 'chars';
+  document.getElementById('compareMethod').value = 'compare';
   compare();
 }
 
@@ -3888,7 +4141,7 @@ function computeHybridRows(textA, textB) {
 
 // 旧関数（互換性のため残す）
 function compareHybrid() {
-  document.getElementById('compareMethod').value = 'hybrid';
+  document.getElementById('compareMethod').value = 'compare';
   compare();
 }
 
@@ -3899,6 +4152,14 @@ function clearAll() {
   document.getElementById('textA').value = '';
   document.getElementById('textB').value = '';
   document.getElementById('results').classList.remove('visible');
+  diffRowElements = [];
+  diffMarkers = [];
+  totalRowCount = 0;
+  currentDiffIndex = -1;
+  updateDiffLocationStatus();
+  updateDiffLocationControls();
+  const barEl = document.getElementById('diffLocationBar');
+  if (barEl) barEl.innerHTML = '';
 }
 
 // サンプルテキストを読み込み
