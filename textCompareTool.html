@@ -2039,70 +2039,58 @@ function repairMidlineNewlineRows(rows) {
     return s;
   }
 
-  function isLeadingWordOnlyRow(r) {
+  function singleSideRow(r) {
     const aEmpty = r.a.tokens.length === 0;
     const bEmpty = r.b.tokens.length === 0;
-    if (aEmpty === bEmpty) return false; // 片側だけ
-    const tokens = aEmpty ? r.b.tokens : r.a.tokens;
-    const s = tokenText(tokens);
-
-    // 改行は含まない
-    if (s.indexOf('\n') !== -1) return false;
-
-    // 1単語（英数字/記号混在でもOK）+ 末尾に空白が無い、というくらいの緩い判定
-    // （"It" / "That" / "Will" などを想定）
-    if (s.trim() !== s) return false; // 前後に空白を含むなら単語だけではない
-    if (s.length === 0) return false;
-    // スペースを含むなら単語だけではない
-    if (s.indexOf(' ') !== -1 || s.indexOf('\t') !== -1) return false;
-
-    return true;
+    if (aEmpty === bEmpty) return null; // 両方 or 両方空
+    return aEmpty ? 'b' : 'a';
   }
 
-  function startsWithSpaceOnNonEmptySide(r) {
-    const aEmpty = r.a.tokens.length === 0;
-    const bEmpty = r.b.tokens.length === 0;
-    // 両方空は除外
-    if (aEmpty && bEmpty) return false;
+  function rowTextNoNewline(r, side) {
+    const tokens = r[side].tokens;
+    const s = tokenText(tokens);
+    if (s.indexOf('\n') !== -1) return null;
+    return s;
+  }
 
-    // どちらかの表示側テキストの先頭がスペースなら true
-    const aText = aEmpty ? '' : tokenText(r.a.tokens);
-    const bText = bEmpty ? '' : tokenText(r.b.tokens);
-
-    const aOk = aText.length > 0 && (aText[0] === ' ' || aText[0] === '\t');
-    const bOk = bText.length > 0 && (bText[0] === ' ' || bText[0] === '\t');
-
-    return aOk || bOk;
+  function startsWithSpace(text) {
+    return !!text && (text[0] === ' ' || text[0] === '\t');
   }
 
   const out = [];
   for (let i = 0; i < rows.length; i++) {
-    // パターン: [単語だけ片側] [改行差分] [先頭スペースで続く行]
-    if (i + 2 < rows.length && isLeadingWordOnlyRow(rows[i]) && isNewlineOnlyRow(rows[i + 1]) && startsWithSpaceOnNonEmptySide(rows[i + 2])) {
-      const wordRow = rows[i];
-      const nlRow = rows[i + 1];
-      const contRow = rows[i + 2];
+    const leadSide = (i + 2 < rows.length) ? singleSideRow(rows[i]) : null;
+    if (leadSide && isNewlineOnlyRow(rows[i + 1])) {
+      const contSide = singleSideRow(rows[i + 2]);
+      if (contSide === leadSide) {
+        const leadText = rowTextNoNewline(rows[i], leadSide);
+        const contText = rowTextNoNewline(rows[i + 2], contSide);
+        if (leadText && contText && startsWithSpace(contText)) {
+          const leadRow = rows[i];
+          const nlRow = rows[i + 1];
+          const contRow = rows[i + 2];
 
-      // 1) まず改行差分行を先に出す（＝本来の行境界として扱う）
-      out.push(nlRow);
+          // 1) まず改行差分行を先に出す（＝本来の行境界として扱う）
+          out.push(nlRow);
 
-      // 2) 単語行 + 続き行 を統合
-      const merged = {
-        a: { tokens: [], isEmpty: false },
-        b: { tokens: [], isEmpty: false }
-      };
+          // 2) 先行行 + 続き行 を統合
+          const merged = {
+            a: { tokens: [], isEmpty: false },
+            b: { tokens: [], isEmpty: false }
+          };
 
-      // A側
-      merged.a.tokens = (wordRow.a.tokens.length ? wordRow.a.tokens.slice() : []).concat(contRow.a.tokens.length ? contRow.a.tokens.slice() : []);
-      merged.b.tokens = (wordRow.b.tokens.length ? wordRow.b.tokens.slice() : []).concat(contRow.b.tokens.length ? contRow.b.tokens.slice() : []);
+          merged.a.tokens = (leadRow.a.tokens.length ? leadRow.a.tokens.slice() : []).concat(contRow.a.tokens.length ? contRow.a.tokens.slice() : []);
+          merged.b.tokens = (leadRow.b.tokens.length ? leadRow.b.tokens.slice() : []).concat(contRow.b.tokens.length ? contRow.b.tokens.slice() : []);
 
-      merged.a.isEmpty = merged.a.tokens.length === 0;
-      merged.b.isEmpty = merged.b.tokens.length === 0;
+          merged.a.isEmpty = merged.a.tokens.length === 0;
+          merged.b.isEmpty = merged.b.tokens.length === 0;
 
-      out.push(merged);
+          out.push(merged);
 
-      i += 2;
-      continue;
+          i += 2;
+          continue;
+        }
+      }
     }
 
     out.push(rows[i]);
@@ -2527,11 +2515,92 @@ function computeHybridRows(textA, textB) {
   const diffChars = generateDiff(tokenize(textA), tokenize(textB));
   let rowsChars = renderDiff(diffChars);
   rowsChars = repairMidlineNewlineRows(rowsChars);
+
+  function rowSideContent(row, side) {
+    if (!row || !row[side] || !Array.isArray(row[side].tokens)) return null;
+    const tokens = row[side].tokens;
+    if (tokens.length === 0) return null;
+    if (tokens.length === 1 && tokens[0].type && String(tokens[0].type).startsWith('newline')) return null;
+    return tokens.map(t => tokenValueToString(t.value)).join('');
+  }
+
+  function isBlankLineRowForSide(row, side) {
+    if (!row || !row.a || !row.b) return false;
+    const otherSide = side === 'a' ? 'b' : 'a';
+    const tokens = row[side].tokens || [];
+    const otherTokens = row[otherSide].tokens || [];
+    if (tokens.length === 0 && otherTokens.length === 0) return true;
+    return (
+      tokens.length === 1 &&
+      tokens[0].type &&
+      String(tokens[0].type).startsWith('newline') &&
+      otherTokens.length === 0
+    );
+  }
+
+  function rowsSplitOriginalLines(rows, text, side) {
+    const lines = splitLinesKeepEmpty(text);
+    let rowIndex = 0;
+
+    for (const line of lines) {
+      if (line === '') {
+        let matched = false;
+        while (rowIndex < rows.length) {
+          const row = rows[rowIndex];
+          if (isBlankLineRowForSide(row, side)) {
+            matched = true;
+            rowIndex++;
+            break;
+          }
+          const content = rowSideContent(row, side);
+          if (content == null) {
+            rowIndex++;
+            continue;
+          }
+          return true;
+        }
+        if (!matched) return true;
+        continue;
+      }
+
+      let collected = '';
+      let rowsUsed = 0;
+
+      while (rowIndex < rows.length && collected.length < line.length) {
+        const row = rows[rowIndex];
+        const content = rowSideContent(row, side);
+        if (content == null) {
+          rowIndex++;
+          continue;
+        }
+        if (!line.startsWith(collected + content)) return true;
+        collected += content;
+        rowsUsed++;
+        rowIndex++;
+        if (collected === line) break;
+      }
+
+      if (collected !== line) return true;
+      if (rowsUsed > 1) return true;
+    }
+
+    for (; rowIndex < rows.length; rowIndex++) {
+      const content = rowSideContent(rows[rowIndex], side);
+      if (content != null) return true;
+    }
+
+    return false;
+  }
+
+  const charsSplitLines =
+    rowsSplitOriginalLines(rowsChars, textA, 'a') ||
+    rowsSplitOriginalLines(rowsChars, textB, 'b');
+
   // 3) スコアで「より自然に見える方」を選ぶ
   const sLine = scoreRowsForDisplay(rowsLine);
   const sChars = scoreRowsForDisplay(rowsChars);
 
-  const useLine = (sLine.score <= sChars.score);
+  const useLine = charsSplitLines || (sLine.score <= sChars.score);
   const rows = useLine ? rowsLine : rowsChars;
 
   return {
@@ -3590,6 +3659,42 @@ function test_hybrid_prefers_line_on_repeated_similar_lines() {
   _tEq(r.method, 'line', "Hybrid should prefer line-based for repeated similar lines");
 }
 
+function test_hybrid_does_not_split_single_line() {
+  const A = `下記の文章を比較してください。
+   Betty Botter bought some butter, 
+But, she said, this butter's bitter;
+If I put it in my batter,
+It will make my batter bitter,
+But a bit of better butter
+
+
+Will make my batter better.
+So she bought a bit of butter
+Better than her bitter butter,
+And she put it in her batter,
+And it made her batter better,
+So 'twas better Betty Botter
+Bought a bit of better butter.`;
+
+  const B = `下記の文章を，ﾋﾋ較してくだちい．
+Betty Botter bought some butter,
+But, she said, the butter's bitter;
+If I put it in my batter,
+That will make my batter bitter.
+But a bit of better butter, 
+That will make my batter better.
+
+So she bought a bit of butter
+Better than her bitter butter.
+And she put it in her batter,
+And it made her batter better.
+So it was better Betty Botter
+Bought a bit of better butter.`;
+
+  const r = computeHybridRows(A, B);
+  _tEq(r.method, 'line', "Hybrid should avoid char mode when a single line would be split");
+}
+
 function test_hybrid_returns_rows_and_scores() {
   const A = "X\n\nY";
   const B = "X\nY";
@@ -3650,6 +3755,37 @@ function test_chars_repair_does_not_split_it_will_by_newline_move() {
     }
   }
   _tAssert(!bad, "Chars diff should not split 'It will' across rows due to moved blank line");
+}
+
+function test_chars_repair_does_not_split_that_will() {
+  const A = [
+    "If I put it in my batter,",
+    "It will make my batter bitter.",
+    "But a bit of better butter",
+    "Will make my batter better."
+  ].join("\n");
+
+  const B = [
+    "If I put it in my batter,",
+    "",
+    "That will make my batter bitter.",
+    "But a bit of better butter",
+    "That will make my batter better."
+  ].join("\n");
+
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  let rows = renderDiff(diff);
+  rows = repairMidlineNewlineRows(rows);
+
+  const combinedB = rows.map(r => r.b.tokens.map(t => t.value).join(''));
+  let split = false;
+  for (let i = 0; i + 1 < combinedB.length; i++) {
+    if (combinedB[i].includes("That will") && combinedB[i + 1].startsWith(" make my batter better")) {
+      split = true;
+      break;
+    }
+  }
+  _tAssert(!split, "Chars diff should not split 'That will make my batter better.' across rows");
 }
 
 
@@ -3817,9 +3953,11 @@ function runAllTests() {
     test_compaction_no_double_empty_after_newline_only,
     test_hybrid_prefers_line_on_repeated_similar_lines,
     test_hybrid_align_shifted_similar_lines,
+    test_hybrid_does_not_split_single_line,
     test_hybrid_returns_rows_and_scores,
     test_scoreRows_penalizes_newline_only_more_than_empty_side,
-    test_chars_repair_does_not_split_it_will_by_newline_move
+    test_chars_repair_does_not_split_it_will_by_newline_move,
+    test_chars_repair_does_not_split_that_will
   ];
 
   const started = performance.now();
