@@ -811,6 +811,153 @@ body.result-only-mode .results-section {
   font-weight: 600;
 }
 
+/* Location pane */
+.diff-layout {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.location-pane {
+  width: 70px;
+  min-width: 70px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+.location-pane-title {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.location-pane-controls {
+  display: flex;
+  flex-direction: row;
+  gap: 2px;
+}
+
+.location-pane-controls button {
+  padding: 2px 4px;
+  font-size: 0.65rem;
+}
+
+.location-pane-status {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.location-pane-bars {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  flex: 1;
+  width: 100%;
+  position: relative;
+}
+
+.location-bar-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.location-bar-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.location-pane-bar {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--surface-raised), var(--surface));
+  border: 1px solid var(--border);
+  overflow: visible;
+  cursor: pointer;
+}
+
+.location-pane-marker {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  transform: translateY(-50%);
+  cursor: pointer;
+  z-index: 2;
+}
+
+.location-pane-marker.delete {
+  background: var(--delete);
+  opacity: 0.7;
+}
+
+.location-pane-marker.insert {
+  background: var(--insert);
+  opacity: 0.7;
+}
+
+.location-pane-marker.empty {
+  background: #999;
+  opacity: 0.5;
+}
+
+.location-pane-marker.current {
+  height: 5px;
+  opacity: 1;
+  box-shadow: 0 0 4px currentColor;
+}
+
+/* ビューポートインジケータ（現在表示中の範囲） */
+.location-pane-viewport {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: var(--accent);
+  opacity: 0.2;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.diff-row.current-diff-row td {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-glow);
+}
+
+/* 結果スクロールコンテナ */
+.diff-scroll-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  max-height: calc(100vh - 100px);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.diff-scroll-container .diff-container {
+  border: none;
+  border-radius: 0;
+}
+
 /* Font size control */
 .text-settings {
   position: relative;
@@ -1002,9 +1149,8 @@ footer a:hover {
   <div class="actions">
     <div class="compare-method-group">
       <select id="compareMethod" class="compare-method-select">
-        <option value="hybrid" selected>ハイブリッド比較</option>
+        <option value="compare" selected>比較</option>
         <option value="line">行比較</option>
-        <option value="chars">文字比較</option>
         <option value="charsLegacy">文字比較（レガシー）</option>
       </select>
       <button class="btn-primary" onclick="compare()">比較する (Ctrl+Enter)</button>
@@ -1087,18 +1233,43 @@ footer a:hover {
         </div>
       </div>
     </div>
-    <div class="diff-container">
-      <table class="diff-table" id="diffTable">
-        <thead>
-          <tr>
-            <th class="line-num-col">#</th>
-            <th>テキスト A</th>
-            <th>テキスト B</th>
-          </tr>
-        </thead>
-        <tbody id="diffBody">
-        </tbody>
-      </table>
+    <div class="diff-layout">
+      <div class="location-pane" id="locationPane">
+        <div class="location-pane-title">ロケーション</div>
+        <div class="location-pane-controls">
+          <button class="btn-secondary btn-small" id="diffFirstBtn" onclick="jumpToDiff('first')" title="最初の差異">▲</button>
+          <button class="btn-secondary btn-small" id="diffPrevBtn" onclick="jumpToDiff('prev')" title="前の差異">△</button>
+          <button class="btn-secondary btn-small" id="diffNextBtn" onclick="jumpToDiff('next')" title="次の差異">▽</button>
+          <button class="btn-secondary btn-small" id="diffLastBtn" onclick="jumpToDiff('last')" title="最後の差異">▼</button>
+        </div>
+        <div class="location-pane-bars" id="locationPaneBars">
+          <div class="location-bar-column">
+            <div class="location-bar-label">A</div>
+            <div class="location-pane-bar" id="diffLocationBarA"></div>
+          </div>
+          <div class="location-bar-column">
+            <div class="location-bar-label">B</div>
+            <div class="location-pane-bar" id="diffLocationBarB"></div>
+          </div>
+          <div class="location-pane-viewport" id="locationViewport"></div>
+        </div>
+        <div class="location-pane-status" id="diffLocationStatus">差異 0 / 0</div>
+      </div>
+      <div class="diff-scroll-container" id="diffScrollContainer">
+        <div class="diff-container">
+          <table class="diff-table" id="diffTable">
+            <thead>
+              <tr>
+                <th class="line-num-col">#</th>
+                <th>テキスト A</th>
+                <th>テキスト B</th>
+              </tr>
+            </thead>
+            <tbody id="diffBody">
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -1895,15 +2066,14 @@ self.onmessage = function(e) {
       case 'line':
         rows = compareLineWorker(textA, textB, progressFn);
         break;
-      case 'chars':
-        rows = compareCharsWorker(textA, textB, progressFn);
-        break;
       case 'charsLegacy':
         rows = compareCharsLegacyWorker(textA, textB, progressFn);
         break;
+      case 'compare':
       case 'hybrid':
+      case 'chars':
       default:
-        rows = buildRowsByLinesWorker(textA, textB, progressFn);
+        rows = compareCharsWorker(textA, textB, progressFn);
         break;
     }
     
@@ -3369,6 +3539,37 @@ function toggleDiffOnly() {
 
 // 結果のみ表示（印刷用）トグル
 let resultOnlyMode = false;
+let diffRowElements = [];
+let diffMarkersA = [];
+let diffMarkersB = [];
+let totalRowCount = 0;
+let currentDiffIndex = -1;
+let isLocationDragging = false;
+let diffRowIndexMap = new Map(); // diff-rowのrowsAll内でのインデックス
+
+function findNearestDiffIndexByRatio(targetRowIndex) {
+  if (diffRowElements.length === 0) return -1;
+  let bestIndex = 0;
+  let bestDistance = Infinity;
+  for (let i = 0; i < diffRowElements.length; i++) {
+    const rowIndexInAll = diffRowIndexMap.get(diffRowElements[i]) || 0;
+    const dist = Math.abs(rowIndexInAll - targetRowIndex);
+    if (dist < bestDistance) {
+      bestDistance = dist;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+function findNearestDiffIndexByY(clientY, barEl) {
+  const rect = barEl.getBoundingClientRect();
+  if (totalRowCount === 0 || rect.height === 0) return -1;
+  const clampedY = Math.min(rect.bottom, Math.max(rect.top, clientY));
+  const ratio = (clampedY - rect.top) / rect.height;
+  const rowPosition = ratio * Math.max(0, totalRowCount - 1);
+  return findNearestDiffIndexByRatio(rowPosition);
+}
 
 function updateResultOnlyButton() {
   const btn = document.getElementById('toggleResultOnlyBtn');
@@ -3387,6 +3588,281 @@ function toggleResultOnly() {
   resultOnlyMode = !resultOnlyMode;
   document.body.classList.toggle('result-only-mode', resultOnlyMode);
   updateResultOnlyButton();
+}
+
+function updateDiffLocationStatus() {
+  const statusEl = document.getElementById('diffLocationStatus');
+  if (!statusEl) return;
+  const total = diffRowElements.length;
+  const current = currentDiffIndex >= 0 ? currentDiffIndex + 1 : 0;
+  statusEl.textContent = `差異 ${current} / ${total}`;
+}
+
+function updateDiffLocationControls() {
+  const hasDiffs = diffRowElements.length > 0;
+  const firstBtn = document.getElementById('diffFirstBtn');
+  const prevBtn = document.getElementById('diffPrevBtn');
+  const nextBtn = document.getElementById('diffNextBtn');
+  const lastBtn = document.getElementById('diffLastBtn');
+  if (firstBtn) firstBtn.disabled = !hasDiffs;
+  if (prevBtn) prevBtn.disabled = !hasDiffs;
+  if (nextBtn) nextBtn.disabled = !hasDiffs;
+  if (lastBtn) lastBtn.disabled = !hasDiffs;
+}
+
+function setCurrentDiffIndex(index, options = { scroll: true }) {
+  if (diffRowElements.length === 0) {
+    currentDiffIndex = -1;
+    updateDiffLocationStatus();
+    updateDiffLocationControls();
+    return;
+  }
+
+  const clamped = Math.max(0, Math.min(index, diffRowElements.length - 1));
+  if (currentDiffIndex >= 0 && diffRowElements[currentDiffIndex]) {
+    diffRowElements[currentDiffIndex].classList.remove('current-diff-row');
+  }
+  if (currentDiffIndex >= 0 && diffMarkersA[currentDiffIndex]) {
+    diffMarkersA[currentDiffIndex].classList.remove('current');
+  }
+  if (currentDiffIndex >= 0 && diffMarkersB[currentDiffIndex]) {
+    diffMarkersB[currentDiffIndex].classList.remove('current');
+  }
+  currentDiffIndex = clamped;
+  const row = diffRowElements[currentDiffIndex];
+  const markerA = diffMarkersA[currentDiffIndex];
+  const markerB = diffMarkersB[currentDiffIndex];
+  if (row) {
+    row.classList.add('current-diff-row');
+    if (options.scroll) {
+      // diff-scroll-container内でスクロール
+      const container = document.getElementById('diffScrollContainer');
+      if (container) {
+        const containerRect = container.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        const relativeTop = rowRect.top - containerRect.top + container.scrollTop;
+        const targetScroll = relativeTop - (containerRect.height / 3);
+        container.scrollTo({
+          top: Math.max(0, targetScroll),
+          behavior: 'smooth'
+        });
+      }
+    }
+  }
+  if (markerA) {
+    markerA.classList.add('current');
+  }
+  if (markerB) {
+    markerB.classList.add('current');
+  }
+  updateDiffLocationStatus();
+  updateDiffLocationControls();
+  updateViewportIndicator();
+}
+
+// ビューポートインジケータを更新
+function updateViewportIndicator() {
+  const container = document.getElementById('diffScrollContainer');
+  const viewport = document.getElementById('locationViewport');
+  const barA = document.getElementById('diffLocationBarA');
+  if (!container || !viewport || !barA || totalRowCount === 0) {
+    if (viewport) viewport.style.display = 'none';
+    return;
+  }
+  
+  const containerHeight = container.clientHeight;
+  const scrollHeight = container.scrollHeight;
+  const scrollTop = container.scrollTop;
+  
+  if (scrollHeight <= containerHeight) {
+    viewport.style.display = 'none';
+    return;
+  }
+  
+  // バーの高さを基準にする（ラベル分を除く）
+  const barRect = barA.getBoundingClientRect();
+  const barHeight = barRect.height;
+  
+  // スクロール位置に対応するビューポートの位置
+  const viewportRatio = scrollTop / scrollHeight;
+  const viewportHeightRatio = containerHeight / scrollHeight;
+  
+  const vpTop = viewportRatio * barHeight;
+  const vpHeight = Math.max(10, viewportHeightRatio * barHeight);
+  
+  // ラベルの高さ分オフセット（約14px）
+  const labelOffset = 14;
+  
+  viewport.style.display = 'block';
+  viewport.style.top = `${labelOffset + vpTop}px`;
+  viewport.style.height = `${vpHeight}px`;
+}
+
+function updateLocationPane() {
+  const barA = document.getElementById('diffLocationBarA');
+  const barB = document.getElementById('diffLocationBarB');
+  if (!barA || !barB) return;
+
+  const rowsAll = Array.from(document.querySelectorAll('#diffBody tr')).filter(row => !row.classList.contains('stats-row') && !row.classList.contains('blank-row'));
+  totalRowCount = rowsAll.length;
+  diffRowElements = rowsAll.filter(row => row.classList.contains('diff-row'));
+  diffMarkersA = [];
+  diffMarkersB = [];
+  barA.innerHTML = '';
+  barB.innerHTML = '';
+
+  // rowsAll内での各行のインデックスマップを作成（グローバル変数に保存）
+  diffRowIndexMap = new Map();
+  rowsAll.forEach((row, idx) => {
+    diffRowIndexMap.set(row, idx);
+  });
+  
+  diffRowElements.forEach((row, index) => {
+    // rowsAll内でのインデックスを取得
+    const rowIndexInAll = diffRowIndexMap.get(row) || 0;
+    const ratio = totalRowCount > 1 ? rowIndexInAll / (totalRowCount - 1) : 0;
+    const topPercent = `${ratio * 100}%`;
+    
+    // A側のマーカー（削除がある場合）
+    const hasDelete = row.querySelector('.diff-delete') !== null;
+    // B側のマーカー（挿入がある場合）
+    const hasInsert = row.querySelector('.diff-insert') !== null;
+    // 空セル（グレーアウト）かどうか
+    const tds = row.querySelectorAll('td');
+    const aIsEmpty = tds[1] && tds[1].classList.contains('empty-cell');
+    const bIsEmpty = tds[2] && tds[2].classList.contains('empty-cell');
+    
+    // A側マーカー
+    const markerA = document.createElement('div');
+    if (aIsEmpty) {
+      markerA.className = 'location-pane-marker empty';
+    } else {
+      markerA.className = 'location-pane-marker' + (hasDelete ? ' delete' : ' insert');
+    }
+    markerA.style.top = topPercent;
+    markerA.title = `${row.dataset.lineNum || index + 1}行目の差異`;
+    markerA.addEventListener('click', (e) => {
+      e.stopPropagation(); // バーのクリックイベントを止める
+      setCurrentDiffIndex(index, { scroll: true });
+    });
+    diffMarkersA.push(markerA);
+    barA.appendChild(markerA);
+    
+    // B側マーカー
+    const markerB = document.createElement('div');
+    if (bIsEmpty) {
+      markerB.className = 'location-pane-marker empty';
+    } else {
+      markerB.className = 'location-pane-marker' + (hasInsert ? ' insert' : ' delete');
+    }
+    markerB.style.top = topPercent;
+    markerB.title = `${row.dataset.lineNum || index + 1}行目の差異`;
+    markerB.addEventListener('click', (e) => {
+      e.stopPropagation(); // バーのクリックイベントを止める
+      setCurrentDiffIndex(index, { scroll: true });
+    });
+    diffMarkersB.push(markerB);
+    barB.appendChild(markerB);
+  });
+
+  // バークリック時のハンドラ - クリック位置に対応する行にスクロール
+  const handleBarClick = (event, barEl) => {
+    const rect = barEl.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+    const targetRowIndex = Math.round(ratio * Math.max(0, totalRowCount - 1));
+    
+    // まずその位置までスクロール
+    scrollToRowIndex(targetRowIndex);
+    
+    // 近くに差分があれば、その差分を選択状態にする
+    if (diffRowElements.length > 0) {
+      const nearestIndex = findNearestDiffIndexByRatio(targetRowIndex);
+      if (nearestIndex >= 0) {
+        // 選択だけして、スクロールはしない（すでにスクロール済みなので）
+        setCurrentDiffIndex(nearestIndex, { scroll: false });
+      }
+    }
+  };
+  
+  // 指定した行インデックスまでスクロール
+  function scrollToRowIndex(rowIndex) {
+    const container = document.getElementById('diffScrollContainer');
+    if (!container || totalRowCount === 0) return;
+    
+    const allRows = Array.from(document.querySelectorAll('#diffBody tr')).filter(
+      row => !row.classList.contains('stats-row') && !row.classList.contains('blank-row')
+    );
+    
+    // 対象の行を見つける
+    const targetRow = allRows[Math.min(rowIndex, allRows.length - 1)];
+    if (targetRow) {
+      const containerRect = container.getBoundingClientRect();
+      const rowRect = targetRow.getBoundingClientRect();
+      const relativeTop = rowRect.top - containerRect.top + container.scrollTop;
+      const targetScroll = relativeTop - (containerRect.height / 3);
+      container.scrollTo({
+        top: Math.max(0, targetScroll),
+        behavior: 'smooth'
+      });
+    }
+  }
+
+  // ドラッグ対応
+  let activeDragBar = null;
+  
+  const handleDrag = (event) => {
+    if (!activeDragBar) return;
+    handleBarClick(event, activeDragBar);
+  };
+
+  barA.onclick = (e) => handleBarClick(e, barA);
+  barB.onclick = (e) => handleBarClick(e, barB);
+  
+  barA.onmousedown = (e) => { activeDragBar = barA; handleBarClick(e, barA); };
+  barB.onmousedown = (e) => { activeDragBar = barB; handleBarClick(e, barB); };
+  
+  window.addEventListener('mouseup', () => { activeDragBar = null; });
+  window.addEventListener('mousemove', handleDrag);
+
+  // スクロールコンテナのスクロールイベントでビューポート更新
+  const container = document.getElementById('diffScrollContainer');
+  if (container) {
+    container.onscroll = updateViewportIndicator;
+  }
+
+  if (diffRowElements.length > 0) {
+    setCurrentDiffIndex(0, { scroll: false });
+  } else {
+    currentDiffIndex = -1;
+    updateDiffLocationStatus();
+    updateDiffLocationControls();
+  }
+  
+  updateViewportIndicator();
+}
+
+function jumpToDiff(direction) {
+  if (diffRowElements.length === 0) return;
+  if (currentDiffIndex === -1) {
+    setCurrentDiffIndex(0);
+    return;
+  }
+  switch (direction) {
+    case 'first':
+      setCurrentDiffIndex(0);
+      break;
+    case 'prev':
+      setCurrentDiffIndex(currentDiffIndex - 1);
+      break;
+    case 'next':
+      setCurrentDiffIndex(currentDiffIndex + 1);
+      break;
+    case 'last':
+      setCurrentDiffIndex(diffRowElements.length - 1);
+      break;
+    default:
+      break;
+  }
 }
 
 // メイン比較関数
@@ -3422,6 +3898,7 @@ function renderComparisonRows(rows, textA, textB, hasDiff) {
     let lineNum = 1;
     for (const row of rows) {
       const tr = document.createElement('tr');
+      tr.dataset.rowIndex = String(lineNum - 1);
 
       // BLANK行（内部マーカー）を検出して非表示にする
       const aText = row.a.tokens.map(t => t.value || '').join('');
@@ -3436,6 +3913,9 @@ function renderComparisonRows(rows, textA, textB, hasDiff) {
       if (!rowHasDiff) {
         tr.classList.add('no-diff-row');
       } else {
+        tr.classList.add('diff-row');
+        tr.dataset.lineNum = String(lineNum);
+        tr.id = `diff-row-${lineNum}`;
         // 差分カウント
         deleteCount += row.a.tokens.filter(t => t.type === 'delete').length;
         insertCount += row.b.tokens.filter(t => t.type === 'insert').length;
@@ -3505,6 +3985,7 @@ function renderComparisonRows(rows, textA, textB, hasDiff) {
   // 差分のみ表示の状態を反映
   document.getElementById('results').classList.toggle('diff-only-mode', onlyDiffMode);
   updateDiffOnlyButton();
+  updateLocationPane();
   document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
 }
@@ -3560,10 +4041,10 @@ function compare() {
       `処理に非常に時間がかかる場合があります。`,
       [
         {
-          text: '文字比較に切替',
+          text: '比較に切替',
           primary: true,
           action: () => {
-            document.getElementById('compareMethod').value = 'chars';
+            document.getElementById('compareMethod').value = 'compare';
             compare();
           }
         },
@@ -3596,19 +4077,17 @@ function compare() {
     case 'line':
       rows = _normalizeRowsTokens(buildRowsForLineCompare(textA, textB));
       break;
-    case 'chars':
-      rows = _normalizeRowsTokens(buildRowsByLines(textA, textB));
-      break;
     case 'charsLegacy':
       const tokensA = tokenize(textA);
       const tokensB = tokenize(textB);
       const diff = generateDiff(tokensA, tokensB);
       rows = renderDiffLegacy(diff);
       break;
+    case 'compare':
     case 'hybrid':
+    case 'chars':
     default:
-      const result = computeHybridRows(textA, textB);
-      rows = _normalizeRowsTokens(result.rows);
+      rows = _normalizeRowsTokens(buildRowsByLines(textA, textB));
       break;
   }
   
@@ -3710,7 +4189,7 @@ function executeCompareWithWorker(textA, textB, method) {
 
 // 旧関数（互換性のため残す）
 function compareChars() {
-  document.getElementById('compareMethod').value = 'chars';
+  document.getElementById('compareMethod').value = 'compare';
   compare();
 }
 
@@ -3888,7 +4367,7 @@ function computeHybridRows(textA, textB) {
 
 // 旧関数（互換性のため残す）
 function compareHybrid() {
-  document.getElementById('compareMethod').value = 'hybrid';
+  document.getElementById('compareMethod').value = 'compare';
   compare();
 }
 
@@ -3899,6 +4378,14 @@ function clearAll() {
   document.getElementById('textA').value = '';
   document.getElementById('textB').value = '';
   document.getElementById('results').classList.remove('visible');
+  diffRowElements = [];
+  diffMarkers = [];
+  totalRowCount = 0;
+  currentDiffIndex = -1;
+  updateDiffLocationStatus();
+  updateDiffLocationControls();
+  const barEl = document.getElementById('diffLocationBar');
+  if (barEl) barEl.innerHTML = '';
 }
 
 // サンプルテキストを読み込み
