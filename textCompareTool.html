@@ -2527,11 +2527,92 @@ function computeHybridRows(textA, textB) {
   const diffChars = generateDiff(tokenize(textA), tokenize(textB));
   let rowsChars = renderDiff(diffChars);
   rowsChars = repairMidlineNewlineRows(rowsChars);
+
+  function rowSideContent(row, side) {
+    if (!row || !row[side] || !Array.isArray(row[side].tokens)) return null;
+    const tokens = row[side].tokens;
+    if (tokens.length === 0) return null;
+    if (tokens.length === 1 && tokens[0].type && String(tokens[0].type).startsWith('newline')) return null;
+    return tokens.map(t => tokenValueToString(t.value)).join('');
+  }
+
+  function isBlankLineRowForSide(row, side) {
+    if (!row || !row.a || !row.b) return false;
+    const otherSide = side === 'a' ? 'b' : 'a';
+    const tokens = row[side].tokens || [];
+    const otherTokens = row[otherSide].tokens || [];
+    if (tokens.length === 0 && otherTokens.length === 0) return true;
+    return (
+      tokens.length === 1 &&
+      tokens[0].type &&
+      String(tokens[0].type).startsWith('newline') &&
+      otherTokens.length === 0
+    );
+  }
+
+  function rowsSplitOriginalLines(rows, text, side) {
+    const lines = splitLinesKeepEmpty(text);
+    let rowIndex = 0;
+
+    for (const line of lines) {
+      if (line === '') {
+        let matched = false;
+        while (rowIndex < rows.length) {
+          const row = rows[rowIndex];
+          if (isBlankLineRowForSide(row, side)) {
+            matched = true;
+            rowIndex++;
+            break;
+          }
+          const content = rowSideContent(row, side);
+          if (content == null) {
+            rowIndex++;
+            continue;
+          }
+          return true;
+        }
+        if (!matched) return true;
+        continue;
+      }
+
+      let collected = '';
+      let rowsUsed = 0;
+
+      while (rowIndex < rows.length && collected.length < line.length) {
+        const row = rows[rowIndex];
+        const content = rowSideContent(row, side);
+        if (content == null) {
+          rowIndex++;
+          continue;
+        }
+        if (!line.startsWith(collected + content)) return true;
+        collected += content;
+        rowsUsed++;
+        rowIndex++;
+        if (collected === line) break;
+      }
+
+      if (collected !== line) return true;
+      if (rowsUsed > 1) return true;
+    }
+
+    for (; rowIndex < rows.length; rowIndex++) {
+      const content = rowSideContent(rows[rowIndex], side);
+      if (content != null) return true;
+    }
+
+    return false;
+  }
+
+  const charsSplitLines =
+    rowsSplitOriginalLines(rowsChars, textA, 'a') ||
+    rowsSplitOriginalLines(rowsChars, textB, 'b');
+
   // 3) スコアで「より自然に見える方」を選ぶ
   const sLine = scoreRowsForDisplay(rowsLine);
   const sChars = scoreRowsForDisplay(rowsChars);
 
-  const useLine = (sLine.score <= sChars.score);
+  const useLine = charsSplitLines || (sLine.score <= sChars.score);
   const rows = useLine ? rowsLine : rowsChars;
 
   return {
@@ -3590,6 +3671,42 @@ function test_hybrid_prefers_line_on_repeated_similar_lines() {
   _tEq(r.method, 'line', "Hybrid should prefer line-based for repeated similar lines");
 }
 
+function test_hybrid_does_not_split_single_line() {
+  const A = `下記の文章を比較してください。
+   Betty Botter bought some butter, 
+But, she said, this butter's bitter;
+If I put it in my batter,
+It will make my batter bitter,
+But a bit of better butter
+
+
+Will make my batter better.
+So she bought a bit of butter
+Better than her bitter butter,
+And she put it in her batter,
+And it made her batter better,
+So 'twas better Betty Botter
+Bought a bit of better butter.`;
+
+  const B = `下記の文章を，ﾋﾋ較してくだちい．
+Betty Botter bought some butter,
+But, she said, the butter's bitter;
+If I put it in my batter,
+That will make my batter bitter.
+But a bit of better butter, 
+That will make my batter better.
+
+So she bought a bit of butter
+Better than her bitter butter.
+And she put it in her batter,
+And it made her batter better.
+So it was better Betty Botter
+Bought a bit of better butter.`;
+
+  const r = computeHybridRows(A, B);
+  _tEq(r.method, 'line', "Hybrid should avoid char mode when a single line would be split");
+}
+
 function test_hybrid_returns_rows_and_scores() {
   const A = "X\n\nY";
   const B = "X\nY";
@@ -3817,6 +3934,7 @@ function runAllTests() {
     test_compaction_no_double_empty_after_newline_only,
     test_hybrid_prefers_line_on_repeated_similar_lines,
     test_hybrid_align_shifted_similar_lines,
+    test_hybrid_does_not_split_single_line,
     test_hybrid_returns_rows_and_scores,
     test_scoreRows_penalizes_newline_only_more_than_empty_side,
     test_chars_repair_does_not_split_it_will_by_newline_move
