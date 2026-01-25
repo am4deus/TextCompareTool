@@ -1700,9 +1700,1704 @@ footer {
   </footer>
 </div>
 
+<script id="text-tools-worker" type="text/plain">
+self.importScripts('https://cdnjs.cloudflare.com/ajax/libs/encoding-japanese/2.0.0/encoding.min.js');
+
+function escapeRegex(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function applyPrefixSuffix(input, options) {
+  const { prefix, suffix, skipEmpty } = options;
+  return input.split('\n').map(line => {
+    if (skipEmpty && line.trim() === '') return line;
+    return prefix + line + suffix;
+  }).join('\n');
+}
+
+function lineBreakRemoveAll(input, replaceWith) {
+  return input.replace(/\n/g, replaceWith);
+}
+
+function lineBreakAtText(input, options) {
+  const { targetText, position, caseSensitive, removeExisting } = options;
+  let text = input;
+  if (removeExisting) {
+    text = text.replace(/\n/g, '');
+  }
+  const flags = caseSensitive ? 'g' : 'gi';
+  const escaped = targetText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(escaped, flags);
+  if (position === 'after') {
+    return text.replace(regex, match => match + '\n');
+  }
+  return text.replace(regex, match => '\n' + match);
+}
+
+function lineBreakEveryN(input, options) {
+  const { n, wordwrap, escapeExisting } = options;
+  let text = input;
+  if (escapeExisting) {
+    text = text.replace(/\n/g, '\\n');
+  }
+
+  if (wordwrap) {
+    const words = text.split(/(\s+)/);
+    let output = '';
+    let currentLine = '';
+
+    for (const word of words) {
+      if ((currentLine + word).length > n && currentLine.trim()) {
+        output += currentLine.trimEnd() + '\n';
+        currentLine = word.trimStart();
+      } else {
+        currentLine += word;
+      }
+    }
+    output += currentLine.trimEnd();
+    return output;
+  }
+
+  let output = '';
+  for (let i = 0; i < text.length; i += n) {
+    output += text.substring(i, i + n);
+    if (i + n < text.length) output += '\n';
+  }
+  return output;
+}
+
+function lineBreakAddAfterEach(input) {
+  return input.split('\n').join('\n\n');
+}
+
+function lineBreakAddBeforeEach(input) {
+  return input.split('\n').map((line, i) => i === 0 ? line : '\n' + line).join('\n');
+}
+
+function lineBreakMergeMultiple(input) {
+  return input.replace(/\n{3,}/g, '\n\n');
+}
+
+function countText(input, options) {
+  const { noHtml, linebreakAsSpace, customQuery, customCaseSensitive } = options;
+  let text = input;
+
+  if (noHtml) {
+    text = text.replace(/<[^>]*>/g, '');
+  }
+  if (linebreakAsSpace) {
+    text = text.replace(/\n/g, ' ');
+  }
+
+  const charCountTotal = text.length;
+  const charCountNoNewline = text.replace(/\n/g, '').length;
+  const charCountNoSpace = text.replace(/[\s　]/g, '').length;
+  const wordCount = text.trim() ? text.trim().split(/\s+/).filter(w => w).length : 0;
+  const sentences = text.split(/[.!?。！？]+/).filter(s => s.trim());
+  const sentenceCount = sentences.length;
+  const paragraphs = input.split(/\n\s*\n/).filter(p => p.trim());
+  const paragraphCount = paragraphs.length || (input.trim() ? 1 : 0);
+  const lineCount = input.split('\n').length;
+  const genkoCount = Math.ceil(charCountNoSpace / 400);
+  const hiraganaCount = (text.match(/[\u3041-\u3096]/g) || []).length;
+  const katakanaCount = (text.match(/[\u30A1-\u30F6\uFF66-\uFF9F]/g) || []).length;
+  const kanjiCount = (text.match(/[\u4E00-\u9FFF\u3400-\u4DBF]/g) || []).length;
+  const alphaCount = (text.match(/[A-Za-zＡ-Ｚａ-ｚ]/g) || []).length;
+  const digitCount = (text.match(/[0-9０-９]/g) || []).length;
+  const symbolCount = charCountNoSpace - hiraganaCount - katakanaCount - kanjiCount - alphaCount - digitCount;
+  const variantCount = (input.match(/[\uDB40-\uDBFF][\uDD00-\uDDEF]/g) || []).length;
+  const utf8Bytes = new Blob([input]).size;
+  const utf16Bytes = input.length * 2 + 2;
+
+  let sjisBytes = 0;
+  for (const char of input) {
+    const code = char.charCodeAt(0);
+    if (code <= 0x7F) {
+      sjisBytes += 1;
+    } else if (code >= 0xFF61 && code <= 0xFF9F) {
+      sjisBytes += 1;
+    } else {
+      sjisBytes += 2;
+    }
+  }
+
+  let eucjpBytes = 0;
+  for (const char of input) {
+    const code = char.charCodeAt(0);
+    if (code <= 0x7F) {
+      eucjpBytes += 1;
+    } else if (code >= 0xFF61 && code <= 0xFF9F) {
+      eucjpBytes += 2;
+    } else {
+      eucjpBytes += 2;
+    }
+  }
+
+  let jisBytes = eucjpBytes + Math.ceil(input.length / 10) * 3;
+
+  const stats = {
+    charCountTotal,
+    charCountNoNewline,
+    charCountNoSpace,
+    lineCount,
+    genkoCount,
+    variantCount,
+    utf8Bytes,
+    utf16Bytes,
+    sjisBytes,
+    eucjpBytes,
+    jisBytes,
+    hiraganaCount,
+    katakanaCount,
+    kanjiCount,
+    alphaCount,
+    digitCount,
+    symbolCount: Math.max(0, symbolCount),
+    wordCount,
+    sentenceCount,
+    paragraphCount
+  };
+
+  let customCount = null;
+  if (customQuery) {
+    const flags = customCaseSensitive ? 'g' : 'gi';
+    const escaped = customQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, flags);
+    const matches = input.match(regex);
+    customCount = matches ? matches.length : 0;
+  }
+
+  let output = `=== 文字カウント結果 ===\n`;
+  output += `文字数: ${charCountTotal.toLocaleString()}\n`;
+  output += `改行除く: ${charCountNoNewline.toLocaleString()}\n`;
+  output += `改行・空白除く: ${charCountNoSpace.toLocaleString()}\n`;
+  output += `行数: ${lineCount.toLocaleString()}\n`;
+  output += `原稿用紙: ${genkoCount.toLocaleString()} 枚\n`;
+  output += `\n=== バイト数 ===\n`;
+  output += `UTF-8: ${utf8Bytes.toLocaleString()} バイト\n`;
+  output += `UTF-16: ${utf16Bytes.toLocaleString()} バイト\n`;
+  output += `Shift-JIS: ${sjisBytes.toLocaleString()} バイト\n`;
+  output += `EUC-JP: ${eucjpBytes.toLocaleString()} バイト\n`;
+  output += `JIS: ${jisBytes.toLocaleString()} バイト\n`;
+  output += `\n=== 文字種別 ===\n`;
+  output += `ひらがな: ${hiraganaCount.toLocaleString()}\n`;
+  output += `カタカナ: ${katakanaCount.toLocaleString()}\n`;
+  output += `漢字: ${kanjiCount.toLocaleString()}\n`;
+  output += `英字: ${alphaCount.toLocaleString()}\n`;
+  output += `数字: ${digitCount.toLocaleString()}\n`;
+  output += `記号等: ${Math.max(0, symbolCount).toLocaleString()}\n`;
+
+  return { output, stats, customCount };
+}
+
+function columnExtractMulti(input, options) {
+  let colDelimiter = options.colDelimiter.replace(/\\t/g, '\t').replace(/\\n/g, '\n');
+  const colCount = options.colCount;
+  let rowDelimiter = options.rowDelimiter.replace(/\\t/g, '\t').replace(/\\n/g, '\n');
+  const removeColDelim = options.removeColDelim;
+  const removeRowDelim = options.removeRowDelim;
+  const hasTitle = options.hasTitle;
+  let titleDelimiter = options.titleDelimiter.replace(/\\t/g, '\t').replace(/\\n/g, '\n');
+  const removeEmpty = options.removeEmpty;
+  const trimValues = options.trimValues;
+
+  const rows = rowDelimiter === '\n' ? input.split('\n') : input.split(rowDelimiter);
+  const columns = Array.from({ length: colCount }, () => []);
+
+  for (const row of rows) {
+    if (removeEmpty && row.trim() === '') continue;
+    let processedRow = row;
+    let title = '';
+    if (hasTitle && titleDelimiter) {
+      const titleIdx = processedRow.indexOf(titleDelimiter);
+      if (titleIdx !== -1) {
+        title = processedRow.substring(0, titleIdx);
+        processedRow = processedRow.substring(titleIdx + titleDelimiter.length);
+      }
+    }
+    const parts = processedRow.split(colDelimiter);
+    for (let i = 0; i < colCount; i++) {
+      let val = parts[i] !== undefined ? parts[i] : '';
+      if (removeColDelim && colDelimiter) {
+        val = val.replace(new RegExp(escapeRegex(colDelimiter), 'g'), '');
+      }
+      if (removeRowDelim && rowDelimiter && rowDelimiter !== '\n') {
+        val = val.replace(new RegExp(escapeRegex(rowDelimiter), 'g'), '');
+      }
+      if (trimValues) val = val.trim();
+      if (hasTitle && i === 0 && title) {
+        val = title + titleDelimiter + val;
+      }
+      columns[i].push(val);
+    }
+  }
+
+  return columns;
+}
+
+function findReplace(input, options) {
+  const { findText, replaceText, useRegex, caseSensitive } = options;
+  if (!findText) return input;
+  if (useRegex) {
+    try {
+      const flags = caseSensitive ? 'g' : 'gi';
+      const regex = new RegExp(findText, flags);
+      return input.replace(regex, replaceText);
+    } catch (e) {
+      return `正規表現エラー: ${e.message}`;
+    }
+  }
+
+  if (caseSensitive) {
+    return input.split(findText).join(replaceText);
+  }
+  const regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  return input.replace(regex, replaceText);
+}
+
+function removeSpaces(input, options) {
+  const { trim, mode } = options;
+  let lines = input.split('\n');
+  lines = lines.map(line => {
+    if (trim) {
+      line = line.trim();
+    }
+    if (mode === 'extra') {
+      line = line.replace(/[ 　\t]+/g, ' ');
+    } else if (mode === 'all') {
+      line = line.replace(/[ 　\t]/g, '');
+    }
+    return line;
+  });
+  return lines.join('\n');
+}
+
+function addSpaces(input, options) {
+  const { addEveryN, addAfterChar, addAfterLine, char, n } = options;
+  let output = input;
+
+  if (addAfterChar && char) {
+    const escaped = char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    output = output.replace(new RegExp(escaped, 'g'), char + ' ');
+  }
+
+  if (addEveryN) {
+    const count = n || 10;
+    const lines = output.split('\n');
+    output = lines.map(line => {
+      let result = '';
+      for (let i = 0; i < line.length; i += count) {
+        result += line.substring(i, i + count);
+        if (i + count < line.length) {
+          result += ' ';
+        }
+      }
+      return result;
+    }).join('\n');
+  }
+
+  if (addAfterLine) {
+    output = output.split('\n').map(line => line + ' ').join('\n');
+  }
+  return output;
+}
+
+function toHalfWidth(str) {
+  return str
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+    .replace(/　/g, ' ')
+    .replace(/[！-～]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
+}
+
+function toFullWidth(str) {
+  return str
+    .replace(/[A-Za-z0-9]/g, s => String.fromCharCode(s.charCodeAt(0) + 0xFEE0))
+    .replace(/ /g, '　')
+    .replace(/[!-~]/g, s => String.fromCharCode(s.charCodeAt(0) + 0xFEE0));
+}
+
+function hiraganaToKatakana(str) {
+  return str.replace(/[\u3041-\u3096]/g, s => String.fromCharCode(s.charCodeAt(0) + 0x60));
+}
+
+function katakanaToHiragana(str) {
+  return str.replace(/[\u30A1-\u30F6]/g, s => String.fromCharCode(s.charCodeAt(0) - 0x60));
+}
+
+function romajiToHiragana(str) {
+  let result = str.toLowerCase();
+  const romajiMap = {
+    kya: 'きゃ', kyu: 'きゅ', kyo: 'きょ',
+    gya: 'ぎゃ', gyu: 'ぎゅ', gyo: 'ぎょ',
+    sha: 'しゃ', shu: 'しゅ', sho: 'しょ',
+    sya: 'しゃ', syu: 'しゅ', syo: 'しょ',
+    ja: 'じゃ', ju: 'じゅ', jo: 'じょ',
+    jya: 'じゃ', jyu: 'じゅ', jyo: 'じょ',
+    cha: 'ちゃ', chu: 'ちゅ', cho: 'ちょ',
+    cya: 'ちゃ', cyu: 'ちゅ', cyo: 'ちょ',
+    nya: 'にゃ', nyu: 'にゅ', nyo: 'にょ',
+    hya: 'ひゃ', hyu: 'ひゅ', hyo: 'ひょ',
+    bya: 'びゃ', byu: 'びゅ', byo: 'びょ',
+    pya: 'ぴゃ', pyu: 'ぴゅ', pyo: 'ぴょ',
+    mya: 'みゃ', myu: 'みゅ', myo: 'みょ',
+    rya: 'りゃ', ryu: 'りゅ', ryo: 'りょ',
+    fa: 'ふぁ', fi: 'ふぃ', fe: 'ふぇ', fo: 'ふぉ',
+    va: 'ゔぁ', vi: 'ゔぃ', vu: 'ゔ', ve: 'ゔぇ', vo: 'ゔぉ',
+    ka: 'か', ki: 'き', ku: 'く', ke: 'け', ko: 'こ',
+    ga: 'が', gi: 'ぎ', gu: 'ぐ', ge: 'げ', go: 'ご',
+    sa: 'さ', shi: 'し', si: 'し', su: 'す', se: 'せ', so: 'そ',
+    za: 'ざ', ji: 'じ', zi: 'じ', zu: 'ず', ze: 'ぜ', zo: 'ぞ',
+    ta: 'た', chi: 'ち', ti: 'ち', tsu: 'つ', tu: 'つ', te: 'て', to: 'と',
+    da: 'だ', di: 'ぢ', du: 'づ', de: 'で', do: 'ど',
+    na: 'な', ni: 'に', nu: 'ぬ', ne: 'ね', no: 'の',
+    ha: 'は', hi: 'ひ', fu: 'ふ', hu: 'ふ', he: 'へ', ho: 'ほ',
+    ba: 'ば', bi: 'び', bu: 'ぶ', be: 'べ', bo: 'ぼ',
+    pa: 'ぱ', pi: 'ぴ', pu: 'ぷ', pe: 'ぺ', po: 'ぽ',
+    ma: 'ま', mi: 'み', mu: 'む', me: 'め', mo: 'も',
+    ya: 'や', yu: 'ゆ', yo: 'よ',
+    ra: 'ら', ri: 'り', ru: 'る', re: 'れ', ro: 'ろ',
+    wa: 'わ', wo: 'を', wi: 'うぃ', we: 'うぇ',
+    a: 'あ', i: 'い', u: 'う', e: 'え', o: 'お',
+    n: 'ん'
+  };
+  result = result.replace(/m([bpm])/g, 'ん$1');
+  result = result.replace(/([kstcnhfmyrwgzdbp])\1/g, 'っ$1');
+  result = result.replace(/tch/g, 'っch');
+  const keys = Object.keys(romajiMap).sort((a, b) => b.length - a.length);
+  for (const romaji of keys) {
+    const regex = new RegExp(romaji, 'g');
+    result = result.replace(regex, romajiMap[romaji]);
+  }
+  result = result.replace(/n(?![aiueoy])/g, 'ん');
+  return result;
+}
+
+function hiraganaToRomaji(str) {
+  let result = str;
+  const hiraMap = {
+    'きゃ': 'kya', 'きゅ': 'kyu', 'きょ': 'kyo',
+    'ぎゃ': 'gya', 'ぎゅ': 'gyu', 'ぎょ': 'gyo',
+    'しゃ': 'sha', 'しゅ': 'shu', 'しょ': 'sho',
+    'じゃ': 'ja', 'じゅ': 'ju', 'じょ': 'jo',
+    'ちゃ': 'cha', 'ちゅ': 'chu', 'ちょ': 'cho',
+    'にゃ': 'nya', 'にゅ': 'nyu', 'にょ': 'nyo',
+    'ひゃ': 'hya', 'ひゅ': 'hyu', 'ひょ': 'hyo',
+    'びゃ': 'bya', 'びゅ': 'byu', 'びょ': 'byo',
+    'ぴゃ': 'pya', 'ぴゅ': 'pyu', 'ぴょ': 'pyo',
+    'みゃ': 'mya', 'みゅ': 'myu', 'みょ': 'myo',
+    'りゃ': 'rya', 'りゅ': 'ryu', 'りょ': 'ryo',
+    'ふぁ': 'fa', 'ふぃ': 'fi', 'ふぇ': 'fe', 'ふぉ': 'fo',
+    'ゔぁ': 'va', 'ゔぃ': 'vi', 'ゔ': 'vu', 'ゔぇ': 've', 'ゔぉ': 'vo',
+    'あ': 'a', 'い': 'i', 'う': 'u', 'え': 'e', 'お': 'o',
+    'か': 'ka', 'き': 'ki', 'く': 'ku', 'け': 'ke', 'こ': 'ko',
+    'さ': 'sa', 'し': 'shi', 'す': 'su', 'せ': 'se', 'そ': 'so',
+    'た': 'ta', 'ち': 'chi', 'つ': 'tsu', 'て': 'te', 'と': 'to',
+    'な': 'na', 'に': 'ni', 'ぬ': 'nu', 'ね': 'ne', 'の': 'no',
+    'は': 'ha', 'ひ': 'hi', 'ふ': 'fu', 'へ': 'he', 'ほ': 'ho',
+    'ま': 'ma', 'み': 'mi', 'む': 'mu', 'め': 'me', 'も': 'mo',
+    'や': 'ya', 'ゆ': 'yu', 'よ': 'yo',
+    'ら': 'ra', 'り': 'ri', 'る': 'ru', 'れ': 're', 'ろ': 'ro',
+    'わ': 'wa', 'を': 'wo', 'ん': 'n',
+    'が': 'ga', 'ぎ': 'gi', 'ぐ': 'gu', 'げ': 'ge', 'ご': 'go',
+    'ざ': 'za', 'じ': 'ji', 'ず': 'zu', 'ぜ': 'ze', 'ぞ': 'zo',
+    'だ': 'da', 'ぢ': 'ji', 'づ': 'zu', 'で': 'de', 'ど': 'do',
+    'ば': 'ba', 'び': 'bi', 'ぶ': 'bu', 'べ': 'be', 'ぼ': 'bo',
+    'ぱ': 'pa', 'ぴ': 'pi', 'ぷ': 'pu', 'ぺ': 'pe', 'ぽ': 'po',
+    'ぁ': 'a', 'ぃ': 'i', 'ぅ': 'u', 'ぇ': 'e', 'ぉ': 'o',
+    'ゃ': 'ya', 'ゅ': 'yu', 'ょ': 'yo', 'っ': ''
+  };
+  const keys = Object.keys(hiraMap).sort((a, b) => b.length - a.length);
+  for (const hira of keys) {
+    const regex = new RegExp(hira, 'g');
+    result = result.replace(regex, hiraMap[hira]);
+  }
+  result = result.replace(/っ([kstcnhfmyrwgzdbpj])/g, '$1$1');
+  result = result.replace(/っch/g, 'tch');
+  result = result.replace(/っsh/g, 'ssh');
+  result = result.replace(/っts/g, 'tts');
+  result = result.replace(/っ/g, '');
+  result = result.replace(/n([aiueoy])/g, "n'$1");
+  return result;
+}
+
+function fullAlphaNumToHalf(str) {
+  return str.replace(/[Ａ-Ｚａ-ｚ０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
+}
+
+function halfAlphaNumToFull(str) {
+  return str.replace(/[A-Za-z0-9]/g, s => String.fromCharCode(s.charCodeAt(0) + 0xFEE0));
+}
+
+function fullKatakanaToHalf(str) {
+  const kanaMap = {
+    'ア': 'ｱ', 'イ': 'ｲ', 'ウ': 'ｳ', 'エ': 'ｴ', 'オ': 'ｵ',
+    'カ': 'ｶ', 'キ': 'ｷ', 'ク': 'ｸ', 'ケ': 'ｹ', 'コ': 'ｺ',
+    'サ': 'ｻ', 'シ': 'ｼ', 'ス': 'ｽ', 'セ': 'ｾ', 'ソ': 'ｿ',
+    'タ': 'ﾀ', 'チ': 'ﾁ', 'ツ': 'ﾂ', 'テ': 'ﾃ', 'ト': 'ﾄ',
+    'ナ': 'ﾅ', 'ニ': 'ﾆ', 'ヌ': 'ﾇ', 'ネ': 'ﾈ', 'ノ': 'ﾉ',
+    'ハ': 'ﾊ', 'ヒ': 'ﾋ', 'フ': 'ﾌ', 'ヘ': 'ﾍ', 'ホ': 'ﾎ',
+    'マ': 'ﾏ', 'ミ': 'ﾐ', 'ム': 'ﾑ', 'メ': 'ﾒ', 'モ': 'ﾓ',
+    'ヤ': 'ﾔ', 'ユ': 'ﾕ', 'ヨ': 'ﾖ',
+    'ラ': 'ﾗ', 'リ': 'ﾘ', 'ル': 'ﾙ', 'レ': 'ﾚ', 'ロ': 'ﾛ',
+    'ワ': 'ﾜ', 'ヲ': 'ｦ', 'ン': 'ﾝ',
+    'ァ': 'ｧ', 'ィ': 'ｨ', 'ゥ': 'ｩ', 'ェ': 'ｪ', 'ォ': 'ｫ',
+    'ッ': 'ｯ', 'ャ': 'ｬ', 'ュ': 'ｭ', 'ョ': 'ｮ',
+    'ー': 'ｰ', '。': '｡', '、': '､', '「': '｢', '」': '｣'
+  };
+  return str.replace(/[ア-ヴー。、「」]/g, s => kanaMap[s] || s);
+}
+
+function halfKatakanaToFull(str) {
+  const kanaMap = {
+    'ｱ': 'ア', 'ｲ': 'イ', 'ｳ': 'ウ', 'ｴ': 'エ', 'ｵ': 'オ',
+    'ｶ': 'カ', 'ｷ': 'キ', 'ｸ': 'ク', 'ｹ': 'ケ', 'ｺ': 'コ',
+    'ｻ': 'サ', 'ｼ': 'シ', 'ｽ': 'ス', 'ｾ': 'セ', 'ｿ': 'ソ',
+    'ﾀ': 'タ', 'ﾁ': 'チ', 'ﾂ': 'ツ', 'ﾃ': 'テ', 'ﾄ': 'ト',
+    'ﾅ': 'ナ', 'ﾆ': 'ニ', 'ﾇ': 'ヌ', 'ﾈ': 'ネ', 'ﾉ': 'ノ',
+    'ﾊ': 'ハ', 'ﾋ': 'ヒ', 'ﾌ': 'フ', 'ﾍ': 'ヘ', 'ﾎ': 'ホ',
+    'ﾏ': 'マ', 'ﾐ': 'ミ', 'ﾑ': 'ム', 'ﾒ': 'メ', 'ﾓ': 'モ',
+    'ﾔ': 'ヤ', 'ﾕ': 'ユ', 'ﾖ': 'ヨ',
+    'ﾗ': 'ラ', 'ﾘ': 'リ', 'ﾙ': 'ル', 'ﾚ': 'レ', 'ﾛ': 'ロ',
+    'ﾜ': 'ワ', 'ｦ': 'ヲ', 'ﾝ': 'ン',
+    'ｧ': 'ァ', 'ｨ': 'ィ', 'ｩ': 'ゥ', 'ｪ': 'ェ', 'ｫ': 'ォ',
+    'ｯ': 'ッ', 'ｬ': 'ャ', 'ｭ': 'ュ', 'ｮ': 'ョ',
+    'ｰ': 'ー', '｡': '。', '､': '、', '｢': '「', '｣': '」'
+  };
+  return str
+    .replace(/ｶﾞ/g, 'ガ').replace(/ｷﾞ/g, 'ギ').replace(/ｸﾞ/g, 'グ').replace(/ｹﾞ/g, 'ゲ').replace(/ｺﾞ/g, 'ゴ')
+    .replace(/ｻﾞ/g, 'ザ').replace(/ｼﾞ/g, 'ジ').replace(/ｽﾞ/g, 'ズ').replace(/ｾﾞ/g, 'ゼ').replace(/ｿﾞ/g, 'ゾ')
+    .replace(/ﾀﾞ/g, 'ダ').replace(/ﾁﾞ/g, 'ヂ').replace(/ﾂﾞ/g, 'ヅ').replace(/ﾃﾞ/g, 'デ').replace(/ﾄﾞ/g, 'ド')
+    .replace(/ﾊﾞ/g, 'バ').replace(/ﾋﾞ/g, 'ビ').replace(/ﾌﾞ/g, 'ブ').replace(/ﾍﾞ/g, 'ベ').replace(/ﾎﾞ/g, 'ボ')
+    .replace(/ﾊﾟ/g, 'パ').replace(/ﾋﾟ/g, 'ピ').replace(/ﾌﾟ/g, 'プ').replace(/ﾍﾟ/g, 'ペ').replace(/ﾎﾟ/g, 'ポ')
+    .replace(/ｳﾞ/g, 'ヴ')
+    .replace(/[ｱ-ﾝｧ-ｮｰ｡､｢｣]/g, s => kanaMap[s] || s);
+}
+
+function quotedPrintableEncode(str) {
+  const utf8Bytes = new TextEncoder().encode(str);
+  let result = '';
+  let lineLen = 0;
+  for (const byte of utf8Bytes) {
+    let encoded;
+    if ((byte >= 33 && byte <= 126 && byte !== 61) || byte === 9 || byte === 32) {
+      encoded = String.fromCharCode(byte);
+    } else {
+      encoded = '=' + byte.toString(16).toUpperCase().padStart(2, '0');
+    }
+    if (lineLen + encoded.length > 76) {
+      result += '=\r\n';
+      lineLen = 0;
+    }
+    result += encoded;
+    lineLen += encoded.length;
+  }
+  return result;
+}
+
+function quotedPrintableDecode(str, charset = 'utf-8') {
+  try {
+    let normalized = str
+      .replace(/=\r\n/g, '')
+      .replace(/=\n/g, '')
+      .replace(/=\r/g, '');
+    const bytes = [];
+    let lastIndex = 0;
+    const pattern = /=([0-9A-Fa-f]{2})/g;
+    let match;
+    while ((match = pattern.exec(normalized)) !== null) {
+      for (let i = lastIndex; i < match.index; i++) {
+        bytes.push(normalized.charCodeAt(i));
+      }
+      bytes.push(parseInt(match[1], 16));
+      lastIndex = match.index + 3;
+    }
+    for (let i = lastIndex; i < normalized.length; i++) {
+      bytes.push(normalized.charCodeAt(i));
+    }
+    const byteArray = new Uint8Array(bytes);
+    if (typeof Encoding !== 'undefined') {
+      try {
+        let fromEncoding;
+        if (charset === 'auto' || charset === 'utf-8') {
+          const detected = Encoding.detect(byteArray);
+          fromEncoding = detected || 'UTF8';
+        } else {
+          fromEncoding = charsetToEncodingName(charset);
+        }
+        const unicodeArray = Encoding.convert(byteArray, {
+          to: 'UNICODE',
+          from: fromEncoding
+        });
+        return Encoding.codeToString(unicodeArray);
+      } catch (e) {
+        // fallback
+      }
+    }
+    return decodeBytes(byteArray, charset);
+  } catch (e) {
+    return 'デコードエラー: ' + e.message;
+  }
+}
+
+function charsetToEncodingName(charset) {
+  charset = charset.toLowerCase();
+  if (charset === 'iso-2022-jp' || charset === 'jis') return 'JIS';
+  if (charset === 'shift_jis' || charset === 'sjis' || charset === 'x-sjis' || charset === 'cp932') return 'SJIS';
+  if (charset === 'euc-jp') return 'EUCJP';
+  if (charset === 'utf-16' || charset === 'utf-16le') return 'UTF16LE';
+  if (charset === 'utf-16be') return 'UTF16BE';
+  return 'UTF8';
+}
+
+function decodeBytes(bytes, charset = 'utf-8') {
+  charset = charset.toLowerCase();
+  if (typeof Encoding !== 'undefined') {
+    let encoding;
+    if (charset === 'iso-2022-jp' || charset === 'jis') {
+      encoding = 'JIS';
+    } else if (charset === 'shift_jis' || charset === 'sjis' || charset === 'x-sjis') {
+      encoding = 'SJIS';
+    } else if (charset === 'euc-jp') {
+      encoding = 'EUCJP';
+    } else {
+      encoding = 'UTF8';
+    }
+    try {
+      const unicodeArray = Encoding.convert(bytes, {
+        to: 'UNICODE',
+        from: encoding
+      });
+      return Encoding.codeToString(unicodeArray);
+    } catch (e) {
+      // fallback
+    }
+  }
+  try {
+    if (charset === 'iso-2022-jp') {
+      return decodeISO2022JP(bytes);
+    }
+    const decoder = new TextDecoder(charset);
+    return decoder.decode(bytes);
+  } catch (e) {
+    return new TextDecoder('utf-8').decode(bytes);
+  }
+}
+
+function decodeISO2022JP(bytes) {
+  let result = '';
+  let mode = 'ascii';
+  let i = 0;
+  while (i < bytes.length) {
+    if (bytes[i] === 0x1B) {
+      if (i + 2 < bytes.length) {
+        if (bytes[i + 1] === 0x28 && bytes[i + 2] === 0x42) {
+          mode = 'ascii';
+          i += 3;
+          continue;
+        } else if (bytes[i + 1] === 0x28 && bytes[i + 2] === 0x4A) {
+          mode = 'ascii';
+          i += 3;
+          continue;
+        } else if (bytes[i + 1] === 0x24 && bytes[i + 2] === 0x42) {
+          mode = 'jisx0208';
+          i += 3;
+          continue;
+        } else if (bytes[i + 1] === 0x24 && bytes[i + 2] === 0x40) {
+          mode = 'jisx0208';
+          i += 3;
+          continue;
+        }
+      }
+    }
+    if (mode === 'ascii') {
+      result += String.fromCharCode(bytes[i]);
+      i++;
+    } else if (mode === 'jisx0208') {
+      if (i + 1 < bytes.length) {
+        const byte1 = bytes[i];
+        const byte2 = bytes[i + 1];
+        const sjis = jisToShiftJIS(byte1, byte2);
+        const unicode = shiftJISToUnicode(sjis[0], sjis[1]);
+        result += unicode || '?';
+        i += 2;
+      } else {
+        i++;
+      }
+    } else {
+      result += String.fromCharCode(bytes[i]);
+      i++;
+    }
+  }
+  return result;
+}
+
+function jisToShiftJIS(byte1, byte2) {
+  let s1, s2;
+  if (byte1 % 2 === 1) {
+    s1 = Math.floor((byte1 + 1) / 2) + (byte1 < 0x5F ? 0x70 : 0xB0);
+    s2 = byte2 + (byte2 < 0x60 ? 0x1F : 0x20);
+  } else {
+    s1 = Math.floor(byte1 / 2) + (byte1 < 0x5F ? 0x70 : 0xB0);
+    s2 = byte2 + 0x7E;
+  }
+  return [s1, s2];
+}
+
+function shiftJISToUnicode(byte1, byte2) {
+  if (typeof Encoding !== 'undefined') {
+    try {
+      const bytes = new Uint8Array([byte1, byte2]);
+      const unicodeArray = Encoding.convert(bytes, {
+        to: 'UNICODE',
+        from: 'SJIS'
+      });
+      return Encoding.codeToString(unicodeArray);
+    } catch (e) {
+      return null;
+    }
+  }
+  try {
+    const bytes = new Uint8Array([byte1, byte2]);
+    const decoder = new TextDecoder('shift_jis');
+    return decoder.decode(bytes);
+  } catch (e) {
+    return null;
+  }
+}
+
+function decodeMimeHeader(str) {
+  return str.replace(/=\?([^?]+)\?([BQ])\?([^?]*)\?=/gi, (match, charset, encoding, encodedText) => {
+    try {
+      if (encoding.toUpperCase() === 'B') {
+        const binaryStr = atob(encodedText);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        return decodeBytes(bytes, charset);
+      }
+      const qpText = encodedText.replace(/_/g, ' ');
+      return quotedPrintableDecode(qpText, charset);
+    } catch (e) {
+      return match;
+    }
+  });
+}
+
+function extractAndDecodeSubject(str) {
+  const lines = str.split(/\r?\n/);
+  let subjectLines = [];
+  let inSubject = false;
+  for (const line of lines) {
+    if (/^Subject:\s*/i.test(line)) {
+      inSubject = true;
+      subjectLines.push(line.replace(/^Subject:\s*/i, ''));
+    } else if (inSubject) {
+      if (/^\s/.test(line)) {
+        subjectLines.push(line.trim());
+      } else {
+        break;
+      }
+    }
+  }
+  if (subjectLines.length === 0) {
+    return 'Subjectヘッダーが見つかりません';
+  }
+  const subject = subjectLines.join('');
+  return decodeMimeHeader(subject);
+}
+
+function detectMailEncoding(str) {
+  const lower = str.toLowerCase();
+  if (lower.includes('charset=iso-2022-jp') || lower.includes('charset=shift_jis') || lower.includes('charset=cp932')) {
+    return { charset: 'shift_jis', encoding: 'base64' };
+  }
+  if (/=\?iso-2022-jp\?/i.test(str)) {
+    return { charset: 'iso-2022-jp', encoding: 'base64' };
+  }
+  if (/=\?shift_jis\?/i.test(str)) {
+    return { charset: 'shift_jis', encoding: 'base64' };
+  }
+  if (/=\?utf-8\?/i.test(str)) {
+    return { charset: 'utf-8', encoding: 'base64' };
+  }
+  if (/^[A-Za-z0-9+/=\s]+$/.test(str.trim()) && str.length > 20) {
+    return { charset: 'utf-8', encoding: 'base64' };
+  }
+  return { charset: 'utf-8', encoding: 'quoted-printable' };
+}
+
+function decodeMailBody(str, options) {
+  const { charset, encoding } = options;
+  let finalCharset = charset;
+  let finalEncoding = encoding;
+  if (charset === 'auto' || encoding === 'auto') {
+    const detected = detectMailEncoding(str);
+    if (charset === 'auto') finalCharset = detected.charset;
+    if (encoding === 'auto') finalEncoding = detected.encoding;
+  }
+  if (finalEncoding === 'base64') {
+    return decodeBase64Mail(str, finalCharset);
+  }
+  return decodeQPMail(str, finalCharset);
+}
+
+function decodeBase64Mail(str, charset = 'utf-8') {
+  try {
+    const cleaned = str.replace(/\s/g, '');
+    const binaryStr = atob(cleaned);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    return decodeBytes(bytes, charset);
+  } catch (e) {
+    return 'デコードエラー: ' + e.message;
+  }
+}
+
+function decodeQPMail(str, charset = 'utf-8') {
+  try {
+    const cleaned = str
+      .replace(/=\r\n/g, '')
+      .replace(/=\n/g, '')
+      .replace(/=\r/g, '');
+    return quotedPrintableDecode(cleaned, charset);
+  } catch (e) {
+    return 'デコードエラー: ' + e.message;
+  }
+}
+
+function decodeFullMail(str) {
+  const lines = str.split(/\r?\n/);
+  let headerEndIndex = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === '') {
+      headerEndIndex = i;
+      break;
+    }
+  }
+  const headers = lines.slice(0, headerEndIndex).join('\n');
+  const body = lines.slice(headerEndIndex + 1).join('\n');
+  const decodedHeaders = decodeMimeHeader(headers);
+  const detected = detectMailEncoding(body);
+  const decodedBody = decodeMailBody(body, {
+    charset: detected.charset,
+    encoding: detected.encoding
+  });
+  return decodedHeaders + '\n\n' + decodedBody;
+}
+
+function convertText(input, options) {
+  const { mode, tabSpaces } = options;
+  let output = input;
+  switch (mode) {
+    case 'lowercase':
+      output = input.toLowerCase();
+      break;
+    case 'uppercase':
+      output = input.toUpperCase();
+      break;
+    case 'randomcase':
+      output = input.split('').map(c => Math.random() > 0.5 ? c.toUpperCase() : c.toLowerCase()).join('');
+      break;
+    case 'studlycaps': {
+      let toggle = true;
+      output = input.split('').map(c => {
+        if (/[a-zA-Z]/.test(c)) {
+          const result = toggle ? c.toUpperCase() : c.toLowerCase();
+          toggle = !toggle;
+          return result;
+        }
+        return c;
+      }).join('');
+      break;
+    }
+    case 'capitalizeWords':
+      output = input.replace(/\b\w/g, c => c.toUpperCase());
+      break;
+    case 'uncapitalizeWords':
+      output = input.replace(/\b\w/g, c => c.toLowerCase());
+      break;
+    case 'capitalizeSentences':
+      output = input.replace(/(^|[.!?。！？]\s*)\w/g, c => c.toUpperCase());
+      break;
+    case 'uncapitalizeSentences':
+      output = input.replace(/(^|[.!?。！？]\s*)\w/g, c => c.toLowerCase());
+      break;
+    case 'snakeCase':
+      output = input.split('\n').map(line =>
+        line
+          .replace(/([a-z])([A-Z])/g, '$1_$2')
+          .replace(/[\s\-]+/g, '_')
+          .toLowerCase()
+      ).join('\n');
+      break;
+    case 'kebabCase':
+      output = input.split('\n').map(line =>
+        line
+          .replace(/([a-z])([A-Z])/g, '$1-$2')
+          .replace(/[\s_]+/g, '-')
+          .toLowerCase()
+      ).join('\n');
+      break;
+    case 'camelCase':
+      output = input.split('\n').map(line =>
+        line
+          .replace(/[\s_\-]+(.)/g, (_, c) => c.toUpperCase())
+          .replace(/^./, c => c.toLowerCase())
+      ).join('\n');
+      break;
+    case 'pascalCase':
+      output = input.split('\n').map(line =>
+        line
+          .replace(/[\s_\-]+(.)/g, (_, c) => c.toUpperCase())
+          .replace(/^./, c => c.toUpperCase())
+      ).join('\n');
+      break;
+    case 'toFullwidth':
+      output = toHalfWidth(input);
+      break;
+    case 'toHalfwidth':
+      output = toFullWidth(input);
+      break;
+    case 'hiraToFullKata':
+      output = toFullWidth(hiraganaToKatakana(input));
+      break;
+    case 'hiraToHalfKata':
+      output = toFullWidth(katakanaToHiragana(input));
+      break;
+    case 'alphaToFull':
+      output = fullAlphaNumToHalf(input);
+      break;
+    case 'alphaToHalf':
+      output = halfAlphaNumToFull(input);
+      break;
+    case 'kataToFull':
+      output = fullKatakanaToHalf(input);
+      break;
+    case 'kataToHalf':
+      output = halfKatakanaToFull(input);
+      break;
+    case 'hiraToKata':
+      output = hiraganaToKatakana(input);
+      break;
+    case 'kataToHira':
+      output = katakanaToHiragana(input);
+      break;
+    case 'romaToHira':
+      output = romajiToHiragana(input);
+      break;
+    case 'romaToKata':
+      output = hiraganaToKatakana(romajiToHiragana(input));
+      break;
+    case 'hiraToRoma':
+      output = hiraganaToRomaji(input);
+      break;
+    case 'tabToSpace':
+      output = input.replace(/\t/g, ' '.repeat(tabSpaces));
+      break;
+    case 'spaceToTab': {
+      const spaceRegex = new RegExp(' {' + tabSpaces + '}', 'g');
+      output = input.replace(spaceRegex, '\t');
+      break;
+    }
+    case 'base64Encode':
+      try {
+        output = btoa(unescape(encodeURIComponent(input)));
+      } catch (e) {
+        output = 'エンコードエラー: ' + e.message;
+      }
+      break;
+    case 'base64Decode':
+      try {
+        output = decodeURIComponent(escape(atob(input.trim())));
+      } catch (e) {
+        output = 'デコードエラー: 不正なBase64文字列です';
+      }
+      break;
+    case 'quotedPrintableEncode':
+      output = quotedPrintableEncode(input);
+      break;
+    case 'quotedPrintableDecode':
+      output = quotedPrintableDecode(input);
+      break;
+    case 'urlEncode':
+      try {
+        output = encodeURIComponent(input);
+      } catch (e) {
+        output = 'エンコードエラー: ' + e.message;
+      }
+      break;
+    case 'urlDecode':
+      try {
+        output = decodeURIComponent(input);
+      } catch (e) {
+        output = 'デコードエラー: 不正なURL文字列です';
+      }
+      break;
+    case 'htmlEntityEncode':
+      output = input
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+      break;
+    case 'htmlEntityDecode':
+      output = input
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&#x([0-9A-Fa-f]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+        .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
+      break;
+  }
+  return output;
+}
+
+function regexTestWorker(input, options) {
+  const { pattern, flags } = options;
+  if (!pattern) {
+    return { resultHtml: '<span style="color:#888">パターンを入力してください</span>' };
+  }
+  try {
+    const regex = new RegExp(pattern, flags);
+    const matches = input.match(regex);
+    if (matches) {
+      let resultHtml = `<span style="color:green">✓ ${matches.length}件のマッチ</span>\n\n`;
+      const globalRegex = new RegExp(pattern, flags.includes('g') ? flags : flags + 'g');
+      let match;
+      const matchList = [];
+      let lastIndex = -1;
+      const maxMatches = 1000;
+      while ((match = globalRegex.exec(input)) !== null && matchList.length < maxMatches) {
+        if (match.index === lastIndex) {
+          globalRegex.lastIndex++;
+          continue;
+        }
+        lastIndex = match.index;
+        matchList.push({
+          text: match[0],
+          index: match.index,
+          groups: match.slice(1)
+        });
+        if (match[0].length === 0) {
+          globalRegex.lastIndex++;
+        }
+        if (!flags.includes('g')) break;
+      }
+      resultHtml += `<strong>マッチ一覧:</strong>\n`;
+      matchList.forEach((m, i) => {
+        resultHtml += `${i + 1}. "${m.text}" (位置: ${m.index})`;
+        if (m.groups.length > 0) {
+          resultHtml += ` グループ: [${m.groups.map((g, j) => `$${j + 1}="${g || ''}"`).join(', ')}]`;
+        }
+        resultHtml += '\n';
+      });
+      if (matchList.length >= maxMatches) {
+        resultHtml += `\n<span style="color:#888">(${maxMatches}件で打ち切り)</span>`;
+      }
+      return { resultHtml };
+    }
+    return { resultHtml: '<span style="color:#c44">✗ マッチなし</span>' };
+  } catch (e) {
+    return { resultHtml: `<span style="color:red">エラー: ${e.message}</span>` };
+  }
+}
+
+function regexExtractWorker(input, options) {
+  const { pattern, flags } = options;
+  if (!pattern) {
+    return { resultHtml: '<span style="color:#888">パターンを入力してください</span>' };
+  }
+  try {
+    const regex = new RegExp(pattern, flags.includes('g') ? flags : flags + 'g');
+    const matches = input.match(regex);
+    if (matches) {
+      return {
+        output: matches.join('\n'),
+        resultHtml: `<span style="color:green">✓ ${matches.length}件を抽出しました</span>`
+      };
+    }
+    return { output: '', resultHtml: '<span style="color:#c44">✗ マッチなし</span>' };
+  } catch (e) {
+    return { resultHtml: `<span style="color:red">エラー: ${e.message}</span>` };
+  }
+}
+
+function regexReplaceWorker(input, options) {
+  const { pattern, flags, replacement } = options;
+  if (!pattern) {
+    return { resultHtml: '<span style="color:#888">パターンを入力してください</span>' };
+  }
+  try {
+    const regex = new RegExp(pattern, flags);
+    const result = input.replace(regex, replacement);
+    const matchCount = (input.match(new RegExp(pattern, flags.includes('g') ? flags : flags + 'g')) || []).length;
+    return {
+      output: result,
+      resultHtml: `<span style="color:green">✓ ${matchCount}件を置換しました</span>`
+    };
+  } catch (e) {
+    return { resultHtml: `<span style="color:red">エラー: ${e.message}</span>` };
+  }
+}
+
+function markdownToHtml(markdown) {
+  let md = markdown.replace(/\r\n/g, '\n');
+  const lines = md.split('\n');
+  const output = [];
+  let inList = false;
+
+  const closeList = () => {
+    if (inList) {
+      output.push('</ul>');
+      inList = false;
+    }
+  };
+
+  const formatInline = (text) => {
+    let html = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    html = html.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+    return html;
+  };
+
+  for (const line of lines) {
+    if (/^#{1,6}\s+/.test(line)) {
+      closeList();
+      const level = line.match(/^#+/)[0].length;
+      const text = line.replace(/^#{1,6}\s+/, '');
+      output.push(`<h${level}>${formatInline(text)}</h${level}>`);
+      continue;
+    }
+    if (/^- /.test(line)) {
+      if (!inList) {
+        output.push('<ul>');
+        inList = true;
+      }
+      const item = line.replace(/^- /, '');
+      output.push(`<li>${formatInline(item)}</li>`);
+      continue;
+    }
+    if (line.trim() === '') {
+      closeList();
+      continue;
+    }
+    closeList();
+    output.push(`<p>${formatInline(line)}</p>`);
+  }
+  closeList();
+  return output.join('\n');
+}
+
+function htmlToMarkdown(html) {
+  let md = html;
+  md = md.replace(/\r\n/g, '\n');
+  md = md.replace(/<h1[^>]*>(.+?)<\/h1>/gi, '# $1\n');
+  md = md.replace(/<h2[^>]*>(.+?)<\/h2>/gi, '## $1\n');
+  md = md.replace(/<h3[^>]*>(.+?)<\/h3>/gi, '### $1\n');
+  md = md.replace(/<h4[^>]*>(.+?)<\/h4>/gi, '#### $1\n');
+  md = md.replace(/<h5[^>]*>(.+?)<\/h5>/gi, '##### $1\n');
+  md = md.replace(/<h6[^>]*>(.+?)<\/h6>/gi, '###### $1\n');
+  md = md.replace(/<strong[^>]*>(.+?)<\/strong>/gi, '**$1**');
+  md = md.replace(/<b[^>]*>(.+?)<\/b>/gi, '**$1**');
+  md = md.replace(/<em[^>]*>(.+?)<\/em>/gi, '*$1*');
+  md = md.replace(/<i[^>]*>(.+?)<\/i>/gi, '*$1*');
+  md = md.replace(/<del[^>]*>(.+?)<\/del>/gi, '~~$1~~');
+  md = md.replace(/<s[^>]*>(.+?)<\/s>/gi, '~~$1~~');
+  md = md.replace(/<code[^>]*>(.+?)<\/code>/gi, '`$1`');
+  md = md.replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, '```\n$1\n```');
+  md = md.replace(/<a[^>]*href="([^"]*)"[^>]*>(.+?)<\/a>/gi, '[$2]($1)');
+  md = md.replace(/<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*\/?>/gi, '![$2]($1)');
+  md = md.replace(/<img[^>]*alt="([^"]*)"[^>]*src="([^"]*)"[^>]*\/?>/gi, '![$1]($2)');
+  md = md.replace(/<li[^>]*>(.+?)<\/li>/gi, '- $1\n');
+  md = md.replace(/<\/?[uo]l[^>]*>/gi, '');
+  md = md.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (_, content) => {
+    return content.split('\n').map(line => '> ' + line.trim()).join('\n') + '\n';
+  });
+  md = md.replace(/<hr[^>]*\/?>/gi, '---\n');
+  md = md.replace(/<p[^>]*>/gi, '');
+  md = md.replace(/<\/p>/gi, '\n\n');
+  md = md.replace(/<br[^>]*\/?>/gi, '\n');
+  md = md.replace(/<[^>]+>/g, '');
+  md = md.replace(/&lt;/g, '<');
+  md = md.replace(/&gt;/g, '>');
+  md = md.replace(/&amp;/g, '&');
+  md = md.replace(/&quot;/g, '"');
+  md = md.replace(/&#39;/g, "'");
+  md = md.replace(/\n{3,}/g, '\n\n');
+  md = md.trim();
+  return md;
+}
+
+const SQL_KEYWORDS = [
+  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL',
+  'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'FULL', 'CROSS', 'ON',
+  'GROUP', 'BY', 'HAVING', 'ORDER', 'ASC', 'DESC', 'LIMIT', 'OFFSET',
+  'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE',
+  'CREATE', 'TABLE', 'DROP', 'ALTER', 'ADD', 'COLUMN',
+  'PRIMARY', 'KEY', 'FOREIGN', 'REFERENCES', 'INDEX', 'UNIQUE',
+  'AS', 'DISTINCT', 'ALL', 'UNION', 'EXCEPT', 'INTERSECT',
+  'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'BETWEEN', 'LIKE', 'EXISTS',
+  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'COALESCE', 'NULLIF',
+  'CAST', 'CONVERT', 'SUBSTRING', 'TRIM', 'UPPER', 'LOWER'
+];
+
+const MAJOR_KEYWORDS = [
+  'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN',
+  'INNER JOIN', 'OUTER JOIN', 'FULL JOIN', 'CROSS JOIN',
+  'GROUP BY', 'HAVING', 'ORDER BY', 'LIMIT', 'OFFSET',
+  'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
+  'UNION', 'UNION ALL', 'EXCEPT', 'INTERSECT'
+];
+
+function formatSql(sql, options) {
+  let formatted = sql.trim();
+  formatted = formatted.replace(/\s+/g, ' ');
+  if (options.uppercaseKeywords) {
+    SQL_KEYWORDS.forEach(kw => {
+      const regex = new RegExp('\\b' + kw + '\\b', 'gi');
+      formatted = formatted.replace(regex, kw);
+    });
+  }
+  MAJOR_KEYWORDS.forEach(kw => {
+    const regex = new RegExp('\\s+(' + kw.replace(' ', '\\s+') + ')\\b', 'gi');
+    formatted = formatted.replace(regex, '\n$1');
+  });
+  if (options.newlineBeforeAnd) {
+    formatted = formatted.replace(/\s+(AND|OR)\s+/gi, (match, kw) => {
+      return '\n' + options.indent + (options.uppercaseKeywords ? kw.toUpperCase() : kw) + ' ';
+    });
+  }
+  if (options.newlineAfterComma) {
+    formatted = formatted.replace(/SELECT\s+([\s\S]*?)\s+FROM/gi, (match, cols) => {
+      const formattedCols = cols.replace(/,\s*/g, ',\n' + options.indent);
+      return 'SELECT ' + formattedCols + '\nFROM';
+    });
+  }
+  const lines = formatted.split('\n');
+  let indentLevel = 0;
+  const result = lines.map(line => {
+    line = line.trim();
+    const closeBrackets = (line.match(/\)/g) || []).length;
+    const openBrackets = (line.match(/\(/g) || []).length;
+    if (closeBrackets > openBrackets) {
+      indentLevel = Math.max(0, indentLevel - (closeBrackets - openBrackets));
+    }
+    const indentedLine = options.indent.repeat(indentLevel) + line;
+    if (openBrackets > closeBrackets) {
+      indentLevel += (openBrackets - closeBrackets);
+    }
+    return indentedLine;
+  });
+  return result.join('\n');
+}
+
+function minifySql(sql) {
+  return sql
+    .replace(/--.*$/gm, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([,()])\s*/g, '$1')
+    .replace(/\s*([=<>!]+)\s*/g, ' $1 ')
+    .trim();
+}
+
+function valuesToInsert(input, options) {
+  const { tableName, quoteValues, quoteChar } = options;
+  const lines = input.split('\n').filter(l => l.trim());
+  if (lines.length === 0) return '';
+  const values = lines.map(line => {
+    const val = line.trim();
+    if (quoteValues) {
+      const escaped = val.replace(new RegExp(quoteChar, 'g'), quoteChar + quoteChar);
+      return quoteChar + escaped + quoteChar;
+    }
+    return val;
+  });
+  return `INSERT INTO ${tableName} VALUES\n(${values.join('),\n(')});`;
+}
+
+function valuesToInClause(input, options) {
+  const { columnName, quoteValues, quoteChar } = options;
+  const lines = input.split('\n').filter(l => l.trim());
+  if (lines.length === 0) return '';
+  const values = lines.map(line => {
+    const val = line.trim();
+    if (quoteValues) {
+      const escaped = val.replace(new RegExp(quoteChar, 'g'), quoteChar + quoteChar);
+      return quoteChar + escaped + quoteChar;
+    }
+    return val;
+  });
+  return `${columnName} IN (\n  ${values.join(',\n  ')}\n)`;
+}
+
+function lineOpsWorker(input, options) {
+  const { mode } = options;
+  let lines = input.split('\n');
+  let output = '';
+  let filterMessage = '';
+  switch (mode) {
+    case 'trimLeft':
+      output = lines.map(line => line.replace(/^[\s　]+/, '')).join('\n');
+      break;
+    case 'trimRight':
+      output = lines.map(line => line.replace(/[\s　]+$/, '')).join('\n');
+      break;
+    case 'sortAlpha':
+    case 'sortAlphaCase':
+    case 'sortNatural':
+    case 'sortNaturalCase':
+    case 'sortLength':
+    case 'sortRandom':
+    case 'sortReverse':
+    case 'sortAsc':
+    case 'sortDesc': {
+      const { delimiter, colNum, desc } = options;
+      const getKey = (line) => {
+        if (delimiter) {
+          const parts = line.split(delimiter);
+          return parts[colNum] !== undefined ? parts[colNum] : line;
+        }
+        return line;
+      };
+      let sortFn;
+      switch (mode) {
+        case 'sortAlpha':
+        case 'sortAsc':
+          sortFn = (a, b) => getKey(a).localeCompare(getKey(b), 'ja', { sensitivity: 'base' });
+          break;
+        case 'sortAlphaCase':
+          sortFn = (a, b) => {
+            const keyA = getKey(a), keyB = getKey(b);
+            return keyA < keyB ? -1 : keyA > keyB ? 1 : 0;
+          };
+          break;
+        case 'sortNatural':
+          sortFn = (a, b) => getKey(a).localeCompare(getKey(b), 'ja', { numeric: true, sensitivity: 'base' });
+          break;
+        case 'sortNaturalCase':
+          sortFn = (a, b) => {
+            const keyA = getKey(a), keyB = getKey(b);
+            const re = /(\d+)|(\D+)/g;
+            const aParts = keyA.match(re) || [];
+            const bParts = keyB.match(re) || [];
+            for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+              const aPart = aParts[i] || '';
+              const bPart = bParts[i] || '';
+              const aNum = parseInt(aPart);
+              const bNum = parseInt(bPart);
+              if (!isNaN(aNum) && !isNaN(bNum)) {
+                if (aNum !== bNum) return aNum - bNum;
+              } else if (aPart !== bPart) {
+                return aPart < bPart ? -1 : 1;
+              }
+            }
+            return 0;
+          };
+          break;
+        case 'sortLength':
+          sortFn = (a, b) => getKey(a).length - getKey(b).length;
+          break;
+        case 'sortRandom':
+          sortFn = () => Math.random() - 0.5;
+          break;
+        case 'sortReverse':
+          output = lines.reverse().join('\n');
+          break;
+        case 'sortDesc':
+          sortFn = (a, b) => getKey(b).localeCompare(getKey(a), 'ja', { numeric: true });
+          break;
+      }
+      if (mode !== 'sortReverse') {
+        lines.sort(sortFn);
+        if (desc && mode !== 'sortRandom') {
+          lines.reverse();
+        }
+        output = lines.join('\n');
+      }
+      break;
+    }
+    case 'uniq':
+      output = lines.filter((line, i) => i === 0 || line !== lines[i - 1]).join('\n');
+      break;
+    case 'combine': {
+      const { delimiter, skipEmpty } = options;
+      let targetLines = lines;
+      if (skipEmpty) {
+        targetLines = lines.filter(line => line.trim() !== '');
+      }
+      output = targetLines.join(delimiter);
+      break;
+    }
+    case 'removeEmpty': {
+      const removeWhitespaceOnly = options.removeWhitespaceOnly;
+      if (removeWhitespaceOnly) {
+        output = lines.filter(line => line.trim() !== '').join('\n');
+      } else {
+        output = lines.filter(line => line !== '').join('\n');
+      }
+      break;
+    }
+    case 'filterContaining':
+    case 'filterNotContaining': {
+      const filterText = options.filterText;
+      const caseSensitive = options.caseSensitive;
+      const useRegex = options.useRegex;
+      const showRemoved = options.showRemoved;
+      const isContaining = mode === 'filterContaining';
+      if (!filterText) {
+        output = input;
+        filterMessage = '検索文字列を入力してください';
+        break;
+      }
+      let matcher;
+      try {
+        if (useRegex) {
+          const flags = caseSensitive ? 'g' : 'gi';
+          matcher = new RegExp(filterText, flags);
+        } else {
+          const escaped = filterText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const flags = caseSensitive ? '' : 'i';
+          matcher = new RegExp(escaped, flags);
+        }
+      } catch (e) {
+        output = input;
+        filterMessage = '正規表現エラー: ' + e.message;
+        break;
+      }
+      const kept = [];
+      const removed = [];
+      for (const line of lines) {
+        const matches = matcher.test(line);
+        matcher.lastIndex = 0;
+        const shouldRemove = isContaining ? matches : !matches;
+        if (shouldRemove) {
+          removed.push(line);
+        } else {
+          kept.push(line);
+        }
+      }
+      output = kept.join('\n');
+      const modeText = isContaining ? '含む' : '含まない';
+      filterMessage = `${removed.length} 行を削除しました（"${filterText}" を${modeText}行）`;
+      if (showRemoved && removed.length > 0) {
+        output += '\n\n--- 削除された行 (' + removed.length + '行) ---\n' + removed.join('\n');
+      }
+      break;
+    }
+    case 'removeDuplicates': {
+      const caseSensitive = options.caseSensitive;
+      const trim = options.trim;
+      const keepOrder = options.keepOrder;
+      const seen = new Set();
+      const result = [];
+      for (const line of lines) {
+        let key = trim ? line.trim() : line;
+        if (!caseSensitive) key = key.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          result.push(line);
+        }
+      }
+      if (!keepOrder) {
+        result.sort((a, b) => a.localeCompare(b, 'ja'));
+      }
+      output = result.join('\n');
+      break;
+    }
+    case 'repeat': {
+      const repeatCount = options.repeatCount;
+      const perRow = options.perRow;
+      const separator = options.separator;
+      const eachLine = options.eachLine;
+      if (eachLine) {
+        const resultLines = [];
+        for (const line of lines) {
+          if (line.trim() === '') {
+            resultLines.push(line);
+            continue;
+          }
+          const repeated = [];
+          for (let i = 0; i < repeatCount; i++) {
+            repeated.push(line);
+          }
+          const chunks = [];
+          for (let i = 0; i < repeated.length; i += perRow) {
+            chunks.push(repeated.slice(i, i + perRow).join(separator));
+          }
+          resultLines.push(chunks.join('\n'));
+        }
+        output = resultLines.join('\n');
+      } else {
+        const text = input;
+        const repeated = [];
+        for (let i = 0; i < repeatCount; i++) {
+          repeated.push(text);
+        }
+        const chunks = [];
+        for (let i = 0; i < repeated.length; i += perRow) {
+          chunks.push(repeated.slice(i, i + perRow).join(separator));
+        }
+        output = chunks.join('\n');
+      }
+      break;
+    }
+    default:
+      output = input;
+  }
+  return { output, filterMessage };
+}
+
+function generateCombinations(lists, delimiters) {
+  if (lists.length === 0) return [''];
+  if (lists.length === 1) return lists[0];
+  const result = [];
+  const [first, ...rest] = lists;
+  const [firstDelim, ...restDelims] = delimiters;
+  const restCombinations = generateCombinations(rest, restDelims);
+  for (const item of first) {
+    for (const combo of restCombinations) {
+      result.push(item + (firstDelim || '') + combo);
+    }
+  }
+  return result;
+}
+
+const handlers = {
+  'execute-main': (payload) => {
+    const { tool, input, options } = payload;
+    switch (tool) {
+      case 'prefix-suffix':
+        return { output: applyPrefixSuffix(input, options) };
+      case 'line-breaks':
+        return { output: input };
+      case 'count':
+        return countText(input, options);
+      case 'column-extract': {
+        const columns = columnExtractMulti(input, options);
+        return { output: columns[0].join('\n'), columns };
+      }
+      case 'find-replace':
+        return { output: findReplace(input, options) };
+      case 'combination': {
+        const { lists, delimiters, prefix, suffix } = options;
+        if (!lists.length) {
+          return { output: '' };
+        }
+        const combos = generateCombinations(lists, delimiters);
+        return { output: combos.map(combo => prefix + combo + suffix).join('\n') };
+      }
+      case 'remove-spaces':
+        return { output: removeSpaces(input, options) };
+      case 'add-spaces':
+        return { output: addSpaces(input, options) };
+      case 'convert':
+        return { output: convertText(input, options) };
+      case 'regex-test':
+        return regexTestWorker(input, options);
+      case 'regex-extract':
+        return regexExtractWorker(input, options);
+      case 'regex-replace':
+        return regexReplaceWorker(input, options);
+      case 'md-html': {
+        const { mode } = options;
+        if (mode === 'preview') {
+          return { previewHtml: markdownToHtml(input) };
+        }
+        if (mode === 'mdToHtml') {
+          return { output: markdownToHtml(input) };
+        }
+        if (mode === 'htmlToMd') {
+          return { output: htmlToMarkdown(input) };
+        }
+        return { output: input };
+      }
+      case 'sql-format': {
+        const { mode, indentType, uppercaseKeywords, newlineBeforeAnd, newlineAfterComma } = options;
+        let output = '';
+        switch (mode) {
+          case 'format':
+            output = formatSql(input, {
+              indent: indentType,
+              uppercaseKeywords,
+              newlineBeforeAnd,
+              newlineAfterComma
+            });
+            break;
+          case 'minify':
+            output = minifySql(input);
+            break;
+          case 'toInsert':
+            output = valuesToInsert(input, options);
+            break;
+          case 'toInClause':
+            output = valuesToInClause(input, options);
+            break;
+        }
+        return { output };
+      }
+      case 'mail-decode': {
+        const { mode } = options;
+        let output = '';
+        switch (mode) {
+          case 'header':
+            output = decodeMimeHeader(input);
+            break;
+          case 'subject':
+            output = extractAndDecodeSubject(input);
+            break;
+          case 'body':
+            output = decodeMailBody(input, options);
+            break;
+          case 'full':
+            output = decodeFullMail(input);
+            break;
+          case 'base64':
+            output = decodeBase64Mail(input, options.charset || 'utf-8');
+            break;
+          case 'qp':
+            output = decodeQPMail(input, options.charset || 'utf-8');
+            break;
+        }
+        return { output };
+      }
+      case 'line-ops':
+        return lineOpsWorker(input, options);
+      default:
+        return { output: input };
+    }
+  },
+  'line-break': (payload) => {
+    const { type, input, options } = payload;
+    switch (type) {
+      case 'remove-all':
+        return { output: lineBreakRemoveAll(input, options.replaceWith) };
+      case 'at-text':
+        return { output: lineBreakAtText(input, options) };
+      case 'every-n':
+        return { output: lineBreakEveryN(input, options) };
+      case 'add-after':
+        return { output: lineBreakAddAfterEach(input) };
+      case 'add-before':
+        return { output: lineBreakAddBeforeEach(input) };
+      case 'merge-multiple':
+        return { output: lineBreakMergeMultiple(input) };
+      default:
+        return { output: input };
+    }
+  }
+};
+
+self.onmessage = (event) => {
+  const { id, action, payload } = event.data;
+  try {
+    const handler = handlers[action];
+    if (!handler) {
+      throw new Error(`Unknown action: ${action}`);
+    }
+    const result = handler(payload);
+    self.postMessage({ id, result });
+  } catch (error) {
+    self.postMessage({ id, error: error.message || String(error) });
+  }
+};
+</script>
+
 <script>
 // Current tool
 let currentTool = 'prefix-suffix';
+const workerScript = document.getElementById('text-tools-worker').textContent;
+const worker = window.Worker ? new Worker(URL.createObjectURL(new Blob([workerScript], { type: 'text/javascript' }))) : null;
+const workerTasks = new Map();
+let workerTaskId = 0;
+
+if (worker) {
+  worker.addEventListener('message', (event) => {
+    const { id, result, error } = event.data;
+    const task = workerTasks.get(id);
+    if (!task) return;
+    if (error) {
+      task.reject(new Error(error));
+    } else {
+      task.resolve(result);
+    }
+    workerTasks.delete(id);
+  });
+}
+
+function runWorkerTask(action, payload) {
+  if (!worker) {
+    return Promise.reject(new Error('WebWorker is not supported in this environment.'));
+  }
+  return new Promise((resolve, reject) => {
+    const id = workerTaskId++;
+    workerTasks.set(id, { resolve, reject });
+    worker.postMessage({ id, action, payload });
+  });
+}
+
+function applyOutput(output) {
+  document.getElementById('outputText').value = output;
+  updateStats('outputText', 'output');
+}
+
+function renderCountResults(stats) {
+  document.getElementById('count-chars').innerHTML = `<strong>${stats.charCountTotal.toLocaleString()}</strong> 文字`;
+  document.getElementById('count-chars-no-newline').innerHTML = `<strong>${stats.charCountNoNewline.toLocaleString()}</strong> 文字`;
+  document.getElementById('count-chars-no-space').innerHTML = `<strong>${stats.charCountNoSpace.toLocaleString()}</strong> 文字`;
+  document.getElementById('count-lines').innerHTML = `<strong>${stats.lineCount.toLocaleString()}</strong> 行`;
+  document.getElementById('count-genko').innerHTML = `<strong>${stats.genkoCount.toLocaleString()}</strong> 枚`;
+  document.getElementById('count-variant').innerHTML = `<strong>${stats.variantCount.toLocaleString()}</strong> 文字`;
+  document.getElementById('count-utf8').innerHTML = `<strong>${stats.utf8Bytes.toLocaleString()}</strong> バイト`;
+  document.getElementById('count-utf16').innerHTML = `<strong>${stats.utf16Bytes.toLocaleString()}</strong> バイト`;
+  document.getElementById('count-sjis').innerHTML = `<strong>${stats.sjisBytes.toLocaleString()}</strong> バイト`;
+  document.getElementById('count-eucjp').innerHTML = `<strong>${stats.eucjpBytes.toLocaleString()}</strong> バイト`;
+  document.getElementById('count-jis').innerHTML = `<strong>${stats.jisBytes.toLocaleString()}</strong> バイト`;
+  document.getElementById('count-hiragana').textContent = stats.hiraganaCount.toLocaleString();
+  document.getElementById('count-katakana').textContent = stats.katakanaCount.toLocaleString();
+  document.getElementById('count-kanji').textContent = stats.kanjiCount.toLocaleString();
+  document.getElementById('count-alpha').textContent = stats.alphaCount.toLocaleString();
+  document.getElementById('count-digit').textContent = stats.digitCount.toLocaleString();
+  document.getElementById('count-symbol').textContent = stats.symbolCount.toLocaleString();
+  document.getElementById('count-words').textContent = stats.wordCount.toLocaleString();
+  document.getElementById('count-sentences').textContent = stats.sentenceCount.toLocaleString();
+  document.getElementById('count-paragraphs').textContent = stats.paragraphCount.toLocaleString();
+}
+
+function renderCustomCountResult(query, count) {
+  const resultSpan = document.getElementById('count-custom-result');
+  if (!query) {
+    resultSpan.textContent = '';
+    return;
+  }
+  resultSpan.textContent = `${count} 件見つかりました`;
+}
+
+function renderColumnResults(columns) {
+  const resultsDiv = document.getElementById('column-results');
+  let html = '<table><tr>';
+  for (let i = 0; i < columns.length; i++) {
+    html += `<th><div class="col-header"><span>Column #${i + 1}</span><button class="btn-copy-col" onclick="copyColumn(${i})">コピー</button></div></th>`;
+  }
+  html += '</tr><tr>';
+  for (let i = 0; i < columns.length; i++) {
+    html += `<td><textarea id="col-output-${i}" readonly>${columns[i].join('\n')}</textarea></td>`;
+  }
+  html += '</tr></table>';
+  resultsDiv.innerHTML = html;
+  resultsDiv.style.display = 'block';
+}
 
 // Theme
 function setTheme(theme) {
@@ -1796,39 +3491,73 @@ document.getElementById('inputText').addEventListener('input', () => updateStats
 document.getElementById('outputText').addEventListener('input', () => updateStats('outputText', 'output'));
 
 // Execute
-function execute() {
+async function execute() {
   const input = document.getElementById('inputText').value;
-  let output = '';
-  
-  switch(currentTool) {
+  let options = {};
+
+  switch (currentTool) {
     case 'prefix-suffix':
-      output = executePrefixSuffix(input);
+      options = {
+        prefix: document.getElementById('prefix-text').value,
+        suffix: document.getElementById('suffix-text').value,
+        skipEmpty: document.getElementById('prefix-skip-empty').checked
+      };
       break;
     case 'line-breaks':
-      output = executeLineBreaks(input);
+      options = {};
       break;
     case 'count':
-      output = executeCount(input);
-      break;
+      await executeCount(input);
+      return;
     case 'column-extract':
-      output = executeColumnExtract(input);
-      break;
+      await executeColumnExtractMulti();
+      return;
     case 'find-replace':
-      output = executeFindReplace(input);
+      options = {
+        findText: document.getElementById('find-text').value,
+        replaceText: document.getElementById('replace-text').value,
+        useRegex: document.getElementById('find-regex').checked,
+        caseSensitive: document.getElementById('find-case').checked
+      };
       break;
-    case 'combination':
-      output = executeCombination(input);
+    case 'combination': {
+      const comboData = collectCombinationData();
+      if (!comboData) {
+        return;
+      }
+      options = comboData;
       break;
+    }
     case 'remove-spaces':
-      output = executeRemoveSpaces(input);
+      options = {
+        trim: document.getElementById('spaces-trim').checked,
+        mode: document.querySelector('input[name="spaces-remove-mode"]:checked').value
+      };
       break;
     case 'add-spaces':
-      output = executeAddSpacesMain(input);
+      options = {
+        addEveryN: document.getElementById('spaces-add-every-n').checked,
+        addAfterChar: document.getElementById('spaces-add-after-char').checked,
+        addAfterLine: document.getElementById('spaces-add-after-line').checked,
+        char: document.getElementById('spaces-after-char').value,
+        n: parseInt(document.getElementById('spaces-add-n').value) || 10
+      };
       break;
   }
-  
-  document.getElementById('outputText').value = output;
-  updateStats('outputText', 'output');
+
+  try {
+    const result = await runWorkerTask('execute-main', { tool: currentTool, input, options });
+    if (result.stats) {
+      renderCountResults(result.stats);
+      renderCustomCountResult(options.customQuery, result.customCount ?? 0);
+    }
+    if (result.columns) {
+      renderColumnResults(result.columns);
+    }
+    applyOutput(result.output || '');
+  } catch (error) {
+    alert(`処理中にエラーが発生しました: ${error.message}`);
+  }
 }
 
 // Tool implementations
@@ -1847,9 +3576,13 @@ function executePrefixSuffix(input) {
 function executeLineBreakRemoveAll() {
   const input = document.getElementById('inputText').value;
   const replaceWith = document.getElementById('lb-remove-replace').value;
-  const output = input.replace(/\n/g, replaceWith);
-  document.getElementById('outputText').value = output;
-  updateStats('outputText', 'output');
+  runWorkerTask('line-break', {
+    type: 'remove-all',
+    input,
+    options: { replaceWith }
+  })
+    .then(result => applyOutput(result.output || ''))
+    .catch(error => alert(`処理中にエラーが発生しました: ${error.message}`));
 }
 
 // Line breaks - At specific text
@@ -1865,25 +3598,18 @@ function executeLineBreakAtText() {
     return;
   }
   
-  // 既存の改行を削除
-  if (removeExisting) {
-    input = input.replace(/\n/g, '');
-  }
-  
-  // 改行を追加
-  const flags = caseSensitive ? 'g' : 'gi';
-  const escaped = targetText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(escaped, flags);
-  
-  let output;
-  if (position === 'after') {
-    output = input.replace(regex, match => match + '\n');
-  } else {
-    output = input.replace(regex, match => '\n' + match);
-  }
-  
-  document.getElementById('outputText').value = output;
-  updateStats('outputText', 'output');
+  runWorkerTask('line-break', {
+    type: 'at-text',
+    input,
+    options: {
+      targetText,
+      position,
+      caseSensitive,
+      removeExisting
+    }
+  })
+    .then(result => applyOutput(result.output || ''))
+    .catch(error => alert(`処理中にエラーが発生しました: ${error.message}`));
 }
 
 // Line breaks - Every N characters
@@ -1893,65 +3619,53 @@ function executeLineBreakEveryN() {
   const wordwrap = document.getElementById('lb-wordwrap').checked;
   const escapeExisting = document.getElementById('lb-escape-existing').checked;
   
-  // 既存の改行をエスケープ
-  if (escapeExisting) {
-    input = input.replace(/\n/g, '\\n');
-  }
-  
-  let output = '';
-  
-  if (wordwrap) {
-    // 単語の途中で切らない
-    const words = input.split(/(\s+)/);
-    let currentLine = '';
-    
-    for (const word of words) {
-      if (currentLine.length + word.length > n && currentLine.length > 0) {
-        output += currentLine.trimEnd() + '\n';
-        currentLine = word.trimStart();
-      } else {
-        currentLine += word;
-      }
+  runWorkerTask('line-break', {
+    type: 'every-n',
+    input,
+    options: {
+      n,
+      wordwrap,
+      escapeExisting
     }
-    if (currentLine) {
-      output += currentLine;
-    }
-  } else {
-    // 単純にN文字ごとに改行
-    for (let i = 0; i < input.length; i += n) {
-      output += input.substring(i, i + n);
-      if (i + n < input.length) {
-        output += '\n';
-      }
-    }
-  }
-  
-  document.getElementById('outputText').value = output;
-  updateStats('outputText', 'output');
+  })
+    .then(result => applyOutput(result.output || ''))
+    .catch(error => alert(`処理中にエラーが発生しました: ${error.message}`));
 }
 
 // Line breaks - Add after each line
 function executeLineBreakAddAfterEach() {
   const input = document.getElementById('inputText').value;
-  const output = input.split('\n').join('\n\n');
-  document.getElementById('outputText').value = output;
-  updateStats('outputText', 'output');
+  runWorkerTask('line-break', {
+    type: 'add-after',
+    input,
+    options: {}
+  })
+    .then(result => applyOutput(result.output || ''))
+    .catch(error => alert(`処理中にエラーが発生しました: ${error.message}`));
 }
 
 // Line breaks - Add before each line
 function executeLineBreakAddBeforeEach() {
   const input = document.getElementById('inputText').value;
-  const output = input.split('\n').map((line, i) => i === 0 ? line : '\n' + line).join('\n');
-  document.getElementById('outputText').value = output;
-  updateStats('outputText', 'output');
+  runWorkerTask('line-break', {
+    type: 'add-before',
+    input,
+    options: {}
+  })
+    .then(result => applyOutput(result.output || ''))
+    .catch(error => alert(`処理中にエラーが発生しました: ${error.message}`));
 }
 
 // Line breaks - Merge multiple empty lines
 function executeLineBreakMergeMultiple() {
   const input = document.getElementById('inputText').value;
-  const output = input.replace(/\n{3,}/g, '\n\n');
-  document.getElementById('outputText').value = output;
-  updateStats('outputText', 'output');
+  runWorkerTask('line-break', {
+    type: 'merge-multiple',
+    input,
+    options: {}
+  })
+    .then(result => applyOutput(result.output || ''))
+    .catch(error => alert(`処理中にエラーが発生しました: ${error.message}`));
 }
 
 function executeLineBreaks(input) {
@@ -1960,141 +3674,27 @@ function executeLineBreaks(input) {
   return input;
 }
 
-function executeCount(input) {
-  const noSpaces = document.getElementById('count-no-spaces').checked;
-  const noHtml = document.getElementById('count-no-html').checked;
-  const linebreakAsSpace = document.getElementById('count-linebreak-space').checked;
-  
-  let text = input;
-  
-  // HTMLタグを除外
-  if (noHtml) {
-    text = text.replace(/<[^>]*>/g, '');
-  }
-  
-  // 改行をスペースとしてカウント
-  if (linebreakAsSpace) {
-    text = text.replace(/\n/g, ' ');
-  }
-  
-  // 文字数計算
-  const charCountTotal = text.length;
-  const charCountNoNewline = text.replace(/\n/g, '').length;
-  const charCountNoSpace = text.replace(/[\s　]/g, '').length;
-  
-  // 単語数（英単語と日本語を考慮）
-  const wordCount = text.trim() ? text.trim().split(/\s+/).filter(w => w).length : 0;
-  
-  // 文数（句点・ピリオド・感嘆符・疑問符で区切る）
-  const sentences = text.split(/[.!?。！？]+/).filter(s => s.trim());
-  const sentenceCount = sentences.length;
-  
-  // 段落数（空行で区切られたブロック）
-  const paragraphs = input.split(/\n\s*\n/).filter(p => p.trim());
-  const paragraphCount = paragraphs.length || (input.trim() ? 1 : 0);
-  
-  // 行数
-  const lineCount = input.split('\n').length;
-  
-  // 原稿用紙（400字詰め）
-  const genkoCount = Math.ceil(charCountNoSpace / 400);
-  
-  // 文字種別カウント
-  const hiraganaCount = (text.match(/[\u3041-\u3096]/g) || []).length;
-  const katakanaCount = (text.match(/[\u30A1-\u30F6\uFF66-\uFF9F]/g) || []).length;
-  const kanjiCount = (text.match(/[\u4E00-\u9FFF\u3400-\u4DBF]/g) || []).length;
-  const alphaCount = (text.match(/[A-Za-zＡ-Ｚａ-ｚ]/g) || []).length;
-  const digitCount = (text.match(/[0-9０-９]/g) || []).length;
-  const symbolCount = charCountNoSpace - hiraganaCount - katakanaCount - kanjiCount - alphaCount - digitCount;
-  
-  // 異体字（IVS: 異体字セレクタを含む文字）
-  const variantCount = (input.match(/[\uDB40-\uDBFF][\uDD00-\uDDEF]/g) || []).length;
-  
-  // バイト数計算
-  const utf8Bytes = new Blob([input]).size;
-  const utf16Bytes = input.length * 2 + 2; // BOM含む概算
-  
-  // Shift-JIS概算（日本語3バイト→2バイト、ASCII1バイト）
-  let sjisBytes = 0;
-  for (const char of input) {
-    const code = char.charCodeAt(0);
-    if (code <= 0x7F) {
-      sjisBytes += 1; // ASCII
-    } else if (code >= 0xFF61 && code <= 0xFF9F) {
-      sjisBytes += 1; // 半角カナ
-    } else {
-      sjisBytes += 2; // その他の日本語
+async function executeCount(input) {
+  const options = {
+    noSpaces: document.getElementById('count-no-spaces').checked,
+    noHtml: document.getElementById('count-no-html').checked,
+    linebreakAsSpace: document.getElementById('count-linebreak-space').checked,
+    customQuery: document.getElementById('count-custom-query').value,
+    customCaseSensitive: document.getElementById('count-custom-case').checked
+  };
+
+  try {
+    const result = await runWorkerTask('execute-main', { tool: 'count', input, options });
+    if (result.stats) {
+      renderCountResults(result.stats);
+      renderCustomCountResult(options.customQuery, result.customCount ?? 0);
     }
+    applyOutput(result.output || '');
+    return result.output || '';
+  } catch (error) {
+    alert(`処理中にエラーが発生しました: ${error.message}`);
+    return '';
   }
-  
-  // EUC-JP概算
-  let eucjpBytes = 0;
-  for (const char of input) {
-    const code = char.charCodeAt(0);
-    if (code <= 0x7F) {
-      eucjpBytes += 1;
-    } else if (code >= 0xFF61 && code <= 0xFF9F) {
-      eucjpBytes += 2; // 半角カナは2バイト
-    } else {
-      eucjpBytes += 2;
-    }
-  }
-  
-  // JIS概算（ISO-2022-JP）
-  let jisBytes = eucjpBytes + Math.ceil(input.length / 10) * 3; // エスケープシーケンス概算
-  
-  // テーブルを更新
-  document.getElementById('count-chars').innerHTML = `<strong>${charCountTotal.toLocaleString()}</strong> 文字`;
-  document.getElementById('count-chars-no-newline').innerHTML = `<strong>${charCountNoNewline.toLocaleString()}</strong> 文字`;
-  document.getElementById('count-chars-no-space').innerHTML = `<strong>${charCountNoSpace.toLocaleString()}</strong> 文字`;
-  document.getElementById('count-lines').innerHTML = `<strong>${lineCount.toLocaleString()}</strong> 行`;
-  document.getElementById('count-genko').innerHTML = `<strong>${genkoCount.toLocaleString()}</strong> 枚`;
-  document.getElementById('count-variant').innerHTML = `<strong>${variantCount.toLocaleString()}</strong> 文字`;
-  
-  document.getElementById('count-utf8').innerHTML = `<strong>${utf8Bytes.toLocaleString()}</strong> バイト`;
-  document.getElementById('count-utf16').innerHTML = `<strong>${utf16Bytes.toLocaleString()}</strong> バイト`;
-  document.getElementById('count-sjis').innerHTML = `<strong>${sjisBytes.toLocaleString()}</strong> バイト`;
-  document.getElementById('count-eucjp').innerHTML = `<strong>${eucjpBytes.toLocaleString()}</strong> バイト`;
-  document.getElementById('count-jis').innerHTML = `<strong>${jisBytes.toLocaleString()}</strong> バイト`;
-  
-  // 文字種別
-  document.getElementById('count-hiragana').textContent = hiraganaCount.toLocaleString();
-  document.getElementById('count-katakana').textContent = katakanaCount.toLocaleString();
-  document.getElementById('count-kanji').textContent = kanjiCount.toLocaleString();
-  document.getElementById('count-alpha').textContent = alphaCount.toLocaleString();
-  document.getElementById('count-digit').textContent = digitCount.toLocaleString();
-  document.getElementById('count-symbol').textContent = Math.max(0, symbolCount).toLocaleString();
-  
-  // 詳細
-  document.getElementById('count-words').textContent = wordCount.toLocaleString();
-  document.getElementById('count-sentences').textContent = sentenceCount.toLocaleString();
-  document.getElementById('count-paragraphs').textContent = paragraphCount.toLocaleString();
-  
-  // カスタムカウント
-  updateCustomCount(input);
-  
-  // 出力テキスト
-  let output = `=== 文字カウント結果 ===\n`;
-  output += `文字数: ${charCountTotal.toLocaleString()}\n`;
-  output += `改行除く: ${charCountNoNewline.toLocaleString()}\n`;
-  output += `改行・空白除く: ${charCountNoSpace.toLocaleString()}\n`;
-  output += `行数: ${lineCount.toLocaleString()}\n`;
-  output += `原稿用紙: ${genkoCount.toLocaleString()} 枚\n`;
-  output += `\n=== バイト数 ===\n`;
-  output += `UTF-8: ${utf8Bytes.toLocaleString()} バイト\n`;
-  output += `UTF-16: ${utf16Bytes.toLocaleString()} バイト\n`;
-  output += `Shift-JIS: ${sjisBytes.toLocaleString()} バイト\n`;
-  output += `EUC-JP: ${eucjpBytes.toLocaleString()} バイト\n`;
-  output += `JIS: ${jisBytes.toLocaleString()} バイト\n`;
-  output += `\n=== 文字種別 ===\n`;
-  output += `ひらがな: ${hiraganaCount.toLocaleString()}\n`;
-  output += `カタカナ: ${katakanaCount.toLocaleString()}\n`;
-  output += `漢字: ${kanjiCount.toLocaleString()}\n`;
-  output += `英字: ${alphaCount.toLocaleString()}\n`;
-  output += `数字: ${digitCount.toLocaleString()}\n`;
-  output += `記号等: ${Math.max(0, symbolCount).toLocaleString()}\n`;
-  
-  return output;
 }
 
 // リアルタイムカウント更新
@@ -2232,87 +3832,29 @@ function executeColumnExtract(input) {
 
 function executeColumnExtractMulti() {
   const input = document.getElementById('inputText').value;
-  let colDelimiter = document.getElementById('column-delimiter-text').value;
-  
-  // エスケープシーケンス対応
-  colDelimiter = colDelimiter.replace(/\\t/g, '\t').replace(/\\n/g, '\n');
-  
-  const colCount = parseInt(document.getElementById('column-count').value) || 4;
-  let rowDelimiter = document.getElementById('column-row-delimiter').value;
-  rowDelimiter = rowDelimiter.replace(/\\t/g, '\t').replace(/\\n/g, '\n');
-  
-  const removeColDelim = document.getElementById('column-remove-col-delim').checked;
-  const removeRowDelim = document.getElementById('column-remove-row-delim').checked;
-  const hasTitle = document.getElementById('column-has-title').checked;
-  let titleDelimiter = document.getElementById('column-title-delimiter').value;
-  titleDelimiter = titleDelimiter.replace(/\\t/g, '\t').replace(/\\n/g, '\n');
-  const removeEmpty = document.getElementById('column-remove-empty').checked;
-  const trimValues = document.getElementById('column-trim').checked;
-  
-  // 行で分割
-  const rows = rowDelimiter === '\n' ? input.split('\n') : input.split(rowDelimiter);
-  
-  // 各列のデータを格納
-  const columns = Array.from({ length: colCount }, () => []);
-  
-  for (const row of rows) {
-    if (removeEmpty && row.trim() === '') continue;
-    
-    let processedRow = row;
-    
-    // タイトル列の処理
-    let title = '';
-    if (hasTitle && titleDelimiter) {
-      const titleIdx = processedRow.indexOf(titleDelimiter);
-      if (titleIdx !== -1) {
-        title = processedRow.substring(0, titleIdx);
-        processedRow = processedRow.substring(titleIdx + titleDelimiter.length);
+  const options = {
+    colDelimiter: document.getElementById('column-delimiter-text').value,
+    colCount: parseInt(document.getElementById('column-count').value) || 4,
+    rowDelimiter: document.getElementById('column-row-delimiter').value,
+    removeColDelim: document.getElementById('column-remove-col-delim').checked,
+    removeRowDelim: document.getElementById('column-remove-row-delim').checked,
+    hasTitle: document.getElementById('column-has-title').checked,
+    titleDelimiter: document.getElementById('column-title-delimiter').value,
+    removeEmpty: document.getElementById('column-remove-empty').checked,
+    trimValues: document.getElementById('column-trim').checked
+  };
+
+  return runWorkerTask('execute-main', { tool: 'column-extract', input, options })
+    .then(result => {
+      if (result.columns) {
+        renderColumnResults(result.columns);
       }
-    }
-    
-    const parts = processedRow.split(colDelimiter);
-    
-    for (let i = 0; i < colCount; i++) {
-      let val = parts[i] !== undefined ? parts[i] : '';
-      
-      // 列区切り文字を削除
-      if (removeColDelim && colDelimiter) {
-        val = val.replace(new RegExp(escapeRegex(colDelimiter), 'g'), '');
-      }
-      
-      // 行区切り文字を削除
-      if (removeRowDelim && rowDelimiter && rowDelimiter !== '\n') {
-        val = val.replace(new RegExp(escapeRegex(rowDelimiter), 'g'), '');
-      }
-      
-      if (trimValues) val = val.trim();
-      
-      // タイトルを最初の列に追加
-      if (hasTitle && i === 0 && title) {
-        val = title + titleDelimiter + val;
-      }
-      
-      columns[i].push(val);
-    }
-  }
-  
-  // 結果テーブルを生成
-  const resultsDiv = document.getElementById('column-results');
-  
-  let html = '<table><tr>';
-  for (let i = 0; i < colCount; i++) {
-    html += `<th><div class="col-header"><span>Column #${i + 1}</span><button class="btn-copy-col" onclick="copyColumn(${i})">コピー</button></div></th>`;
-  }
-  html += '</tr><tr>';
-  for (let i = 0; i < colCount; i++) {
-    html += `<td><textarea id="col-output-${i}" readonly>${columns[i].join('\n')}</textarea></td>`;
-  }
-  html += '</tr></table>';
-  
-  resultsDiv.innerHTML = html;
-  resultsDiv.style.display = 'block';
-  
-  return columns[0].join('\n');
+      return result.output || '';
+    })
+    .catch(error => {
+      alert(`処理中にエラーが発生しました: ${error.message}`);
+      return '';
+    });
 }
 
 // 正規表現エスケープ用ヘルパー
@@ -2439,7 +3981,7 @@ function clearComboInputs() {
   updateComboCounts();
 }
 
-function executeCombination(input) {
+function collectCombinationData() {
   const prefix = document.getElementById('combo-prefix').value.replace(/\\x/g, '\n');
   const suffix = document.getElementById('combo-suffix').value.replace(/\\x/g, '\n');
   
@@ -2464,7 +4006,7 @@ function executeCombination(input) {
   
   if (lists.length === 0) {
     document.getElementById('combination-count').textContent = '0 組み合わせ';
-    return '';
+    return null;
   }
   
   // 組み合わせ数を計算
@@ -2474,30 +4016,31 @@ function executeCombination(input) {
   // 警告（大量の組み合わせ）
   if (totalCombinations > 100000) {
     if (!confirm(`${totalCombinations.toLocaleString()} 件の組み合わせが生成されます。続行しますか？`)) {
-      return '';
+      return null;
     }
   }
-  
-  // 全組み合わせを生成
-  function generateCombinations(lists, delimiters) {
-    if (lists.length === 0) return [''];
-    if (lists.length === 1) return lists[0];
-    
-    const result = [];
-    const [first, ...rest] = lists;
-    const [firstDelim, ...restDelims] = delimiters;
-    const restCombinations = generateCombinations(rest, restDelims);
-    
-    for (const item of first) {
-      for (const combo of restCombinations) {
-        result.push(item + (firstDelim || '') + combo);
-      }
-    }
-    return result;
+
+  return {
+    prefix,
+    suffix,
+    lists,
+    delimiters
+  };
+}
+
+async function executeCombination(input) {
+  const comboData = collectCombinationData();
+  if (!comboData) {
+    return '';
   }
-  
-  const combinations = generateCombinations(lists, delimiters);
-  return combinations.map(combo => prefix + combo + suffix).join('\n');
+  try {
+    const result = await runWorkerTask('execute-main', { tool: 'combination', input, options: comboData });
+    applyOutput(result.output || '');
+    return result.output || '';
+  } catch (error) {
+    alert(`処理中にエラーが発生しました: ${error.message}`);
+    return '';
+  }
 }
 
 // 初期化時にイベントリスナーを設定
@@ -2512,71 +4055,41 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Remove spaces
 function executeRemoveSpaces(input) {
-  const trim = document.getElementById('spaces-trim').checked;
-  const mode = document.querySelector('input[name="spaces-remove-mode"]:checked').value;
-  
-  let lines = input.split('\n');
-  
-  lines = lines.map(line => {
-    // トリム
-    if (trim) {
-      line = line.trim();
-    }
-    
-    // 空白削除モード
-    if (mode === 'extra') {
-      // 連続する空白を1つに（半角・全角スペース、タブ）
-      line = line.replace(/[ 　\t]+/g, ' ');
-    } else if (mode === 'all') {
-      // すべての空白を削除
-      line = line.replace(/[ 　\t]/g, '');
-    }
-    
-    return line;
-  });
-  
-  return lines.join('\n');
+  const options = {
+    trim: document.getElementById('spaces-trim').checked,
+    mode: document.querySelector('input[name="spaces-remove-mode"]:checked').value
+  };
+
+  return runWorkerTask('execute-main', { tool: 'remove-spaces', input, options })
+    .then(result => {
+      applyOutput(result.output || '');
+      return result.output || '';
+    })
+    .catch(error => {
+      alert(`処理中にエラーが発生しました: ${error.message}`);
+      return '';
+    });
 }
 
 // Add spaces (実行ボタンから呼び出し用)
 function executeAddSpacesMain(input) {
-  const addEveryN = document.getElementById('spaces-add-every-n').checked;
-  const addAfterChar = document.getElementById('spaces-add-after-char').checked;
-  const addAfterLine = document.getElementById('spaces-add-after-line').checked;
-  
-  let output = input;
-  
-  // 指定文字の後に空白を追加
-  if (addAfterChar) {
-    const char = document.getElementById('spaces-after-char').value;
-    if (char) {
-      const escaped = char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      output = output.replace(new RegExp(escaped, 'g'), char + ' ');
-    }
-  }
-  
-  // N文字ごとに空白を追加
-  if (addEveryN) {
-    const n = parseInt(document.getElementById('spaces-add-n').value) || 10;
-    const lines = output.split('\n');
-    output = lines.map(line => {
-      let result = '';
-      for (let i = 0; i < line.length; i += n) {
-        result += line.substring(i, i + n);
-        if (i + n < line.length) {
-          result += ' ';
-        }
-      }
-      return result;
-    }).join('\n');
-  }
-  
-  // 各行の末尾に空白を追加
-  if (addAfterLine) {
-    output = output.split('\n').map(line => line + ' ').join('\n');
-  }
-  
-  return output;
+  const options = {
+    addEveryN: document.getElementById('spaces-add-every-n').checked,
+    addAfterChar: document.getElementById('spaces-add-after-char').checked,
+    addAfterLine: document.getElementById('spaces-add-after-line').checked,
+    char: document.getElementById('spaces-after-char').value,
+    n: parseInt(document.getElementById('spaces-add-n').value) || 10
+  };
+
+  return runWorkerTask('execute-main', { tool: 'add-spaces', input, options })
+    .then(result => {
+      applyOutput(result.output || '');
+      return result.output || '';
+    })
+    .catch(error => {
+      alert(`処理中にエラーが発生しました: ${error.message}`);
+      return '';
+    });
 }
 
 function executeRemoveSpacesOld(input) {
@@ -2589,216 +4102,13 @@ function executeRemoveSpacesOld(input) {
 // ============================================
 function executeConvert(mode) {
   const input = document.getElementById('inputText').value;
-  let output = input;
-  
-  switch(mode) {
-    // 大文字/小文字
-    case 'lowercase':
-      output = input.toLowerCase();
-      break;
-    case 'uppercase':
-      output = input.toUpperCase();
-      break;
-    case 'randomcase':
-      // ランダムに大文字/小文字
-      output = input.split('').map(c => Math.random() > 0.5 ? c.toUpperCase() : c.toLowerCase()).join('');
-      break;
-    case 'studlycaps':
-      // 交互に大文字/小文字（StUdLy CaPs）
-      let toggle = true;
-      output = input.split('').map(c => {
-        if (/[a-zA-Z]/.test(c)) {
-          const result = toggle ? c.toUpperCase() : c.toLowerCase();
-          toggle = !toggle;
-          return result;
-        }
-        return c;
-      }).join('');
-      break;
-    case 'capitalizeWords':
-      // 各単語の先頭を大文字
-      output = input.replace(/\b\w/g, c => c.toUpperCase());
-      break;
-    case 'uncapitalizeWords':
-      // 各単語の先頭を小文字
-      output = input.replace(/\b\w/g, c => c.toLowerCase());
-      break;
-    case 'capitalizeSentences':
-      // 各文の先頭を大文字
-      output = input.replace(/(^|[.!?。！？]\s*)\w/g, c => c.toUpperCase());
-      break;
-    case 'uncapitalizeSentences':
-      // 各文の先頭を小文字
-      output = input.replace(/(^|[.!?。！？]\s*)\w/g, c => c.toLowerCase());
-      break;
-    case 'snakeCase':
-      // snake_case（行ごとに処理）
-      output = input.split('\n').map(line => 
-        line
-          .replace(/([a-z])([A-Z])/g, '$1_$2')
-          .replace(/[\s\-]+/g, '_')
-          .toLowerCase()
-      ).join('\n');
-      break;
-    case 'kebabCase':
-      // kebab-case（行ごとに処理）
-      output = input.split('\n').map(line =>
-        line
-          .replace(/([a-z])([A-Z])/g, '$1-$2')
-          .replace(/[\s_]+/g, '-')
-          .toLowerCase()
-      ).join('\n');
-      break;
-    case 'camelCase':
-      // camelCase（行ごとに処理）
-      output = input.split('\n').map(line =>
-        line
-          .replace(/[\s_\-]+(.)/g, (_, c) => c.toUpperCase())
-          .replace(/^./, c => c.toLowerCase())
-      ).join('\n');
-      break;
-    case 'pascalCase':
-      // PascalCase（行ごとに処理）
-      output = input.split('\n').map(line =>
-        line
-          .replace(/[\s_\-]+(.)/g, (_, c) => c.toUpperCase())
-          .replace(/^./, c => c.toUpperCase())
-      ).join('\n');
-      break;
-    
-    // 全角→半角
-    case 'toFullwidth':
-      output = toHalfWidth(input);
-      break;
-    // 半角→全角
-    case 'toHalfwidth':
-      output = toFullWidth(input);
-      break;
-    
-    // 半角＋ひら→全角・カタカナ
-    case 'hiraToFullKata':
-      output = toFullWidth(hiraganaToKatakana(input));
-      break;
-    // 半角＋全カタ→全角・ひらがな
-    case 'hiraToHalfKata':
-      output = toFullWidth(katakanaToHiragana(input));
-      break;
-    
-    // 全角英数→半角英数
-    case 'alphaToFull':
-      output = fullAlphaNumToHalf(input);
-      break;
-    // 半角英数→全角英数
-    case 'alphaToHalf':
-      output = halfAlphaNumToFull(input);
-      break;
-    
-    // 全角カタカナ→半角カタカナ
-    case 'kataToFull':
-      output = fullKatakanaToHalf(input);
-      break;
-    // 半角カタカナ→全角カタカナ
-    case 'kataToHalf':
-      output = halfKatakanaToFull(input);
-      break;
-    
-    // ひらがな⇔カタカナ
-    case 'hiraToKata':
-      output = hiraganaToKatakana(input);
-      break;
-    case 'kataToHira':
-      output = katakanaToHiragana(input);
-      break;
-    
-    // ローマ字変換
-    case 'romaToHira':
-      output = romajiToHiragana(input);
-      break;
-    case 'romaToKata':
-      output = hiraganaToKatakana(romajiToHiragana(input));
-      break;
-    case 'hiraToRoma':
-      output = hiraganaToRomaji(input);
-      break;
-    
-    // TAB⇔空白
-    case 'tabToSpace': {
-      const tabSpaces = parseInt(document.getElementById('convert-tab-spaces').value) || 4;
-      output = input.replace(/\t/g, ' '.repeat(tabSpaces));
-      break;
-    }
-    case 'spaceToTab': {
-      const numSpaces = parseInt(document.getElementById('convert-tab-spaces').value) || 4;
-      const spaceRegex = new RegExp(' {' + numSpaces + '}', 'g');
-      output = input.replace(spaceRegex, '\t');
-      break;
-    }
-    
-    // Base64
-    case 'base64Encode':
-      try {
-        // UTF-8対応
-        output = btoa(unescape(encodeURIComponent(input)));
-      } catch (e) {
-        output = 'エンコードエラー: ' + e.message;
-      }
-      break;
-    case 'base64Decode':
-      try {
-        // UTF-8対応
-        output = decodeURIComponent(escape(atob(input.trim())));
-      } catch (e) {
-        output = 'デコードエラー: 不正なBase64文字列です';
-      }
-      break;
-    
-    // Quoted-Printable
-    case 'quotedPrintableEncode':
-      output = quotedPrintableEncode(input);
-      break;
-    case 'quotedPrintableDecode':
-      output = quotedPrintableDecode(input);
-      break;
-    
-    // URL エンコード
-    case 'urlEncode':
-      try {
-        output = encodeURIComponent(input);
-      } catch (e) {
-        output = 'エンコードエラー: ' + e.message;
-      }
-      break;
-    case 'urlDecode':
-      try {
-        output = decodeURIComponent(input);
-      } catch (e) {
-        output = 'デコードエラー: 不正なURL文字列です';
-      }
-      break;
-    
-    // HTMLエンティティ
-    case 'htmlEntityEncode':
-      output = input
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-      break;
-    case 'htmlEntityDecode':
-      output = input
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&#x([0-9A-Fa-f]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-        .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
-      break;
-  }
-  
-  document.getElementById('outputText').value = output;
-  updateStats('outputText', 'output');
+  const options = {
+    mode,
+    tabSpaces: parseInt(document.getElementById('convert-tab-spaces').value) || 4
+  };
+  runWorkerTask('execute-main', { tool: 'convert', input, options })
+    .then(result => applyOutput(result.output || ''))
+    .catch(error => alert(`処理中にエラーが発生しました: ${error.message}`));
 }
 
 // Quoted-Printable エンコード
@@ -3047,31 +4357,14 @@ function shiftJISToUnicode(byte1, byte2) {
 // ============================================
 function executeMailDecode(mode) {
   const input = document.getElementById('inputText').value;
-  let output = '';
-  
-  switch(mode) {
-    case 'header':
-      output = decodeMimeHeader(input);
-      break;
-    case 'subject':
-      output = extractAndDecodeSubject(input);
-      break;
-    case 'body':
-      output = decodeMailBody(input);
-      break;
-    case 'full':
-      output = decodeFullMail(input);
-      break;
-    case 'base64':
-      output = decodeBase64Mail(input);
-      break;
-    case 'qp':
-      output = decodeQPMail(input);
-      break;
-  }
-  
-  document.getElementById('outputText').value = output;
-  updateStats('outputText', 'output');
+  const options = {
+    mode,
+    charset: document.getElementById('mail-charset').value,
+    encoding: document.getElementById('mail-encoding').value
+  };
+  runWorkerTask('execute-main', { tool: 'mail-decode', input, options })
+    .then(result => applyOutput(result.output || ''))
+    .catch(error => alert(`処理中にエラーが発生しました: ${error.message}`));
 }
 
 // MIMEエンコードされたヘッダーをデコード
@@ -3636,116 +4929,104 @@ function executeRegexTest() {
   const input = document.getElementById('inputText').value;
   const pattern = document.getElementById('regex-pattern').value;
   const resultDiv = document.getElementById('regex-result');
-  
-  if (!pattern) {
-    resultDiv.innerHTML = '<span style="color:#888">パターンを入力してください</span>';
-    return;
-  }
-  
-  try {
-    const flags = getRegexFlags();
-    const regex = new RegExp(pattern, flags);
-    const matches = input.match(regex);
-    
-    if (matches) {
-      resultDiv.innerHTML = `<span style="color:green">✓ ${matches.length}件のマッチ</span>\n\n`;
-      
-      // マッチ位置を表示
-      const globalRegex = new RegExp(pattern, flags.includes('g') ? flags : flags + 'g');
-      let match;
-      const matchList = [];
-      let lastIndex = -1;
-      const maxMatches = 1000; // 無限ループ防止
-      
-      while ((match = globalRegex.exec(input)) !== null && matchList.length < maxMatches) {
-        // 空文字マッチで同じ位置の場合、強制的に進める
-        if (match.index === lastIndex) {
-          globalRegex.lastIndex++;
-          continue;
-        }
-        lastIndex = match.index;
-        
-        matchList.push({
-          text: match[0],
-          index: match.index,
-          groups: match.slice(1)
-        });
-        
-        // 空文字マッチの場合、lastIndexを進める
-        if (match[0].length === 0) {
-          globalRegex.lastIndex++;
-        }
-        
-        if (!flags.includes('g')) break;
-      }
-      
-      resultDiv.innerHTML += `<strong>マッチ一覧:</strong>\n`;
-      matchList.forEach((m, i) => {
-        resultDiv.innerHTML += `${i + 1}. "${m.text}" (位置: ${m.index})`;
-        if (m.groups.length > 0) {
-          resultDiv.innerHTML += ` グループ: [${m.groups.map((g, j) => `$${j+1}="${g || ''}"`).join(', ')}]`;
-        }
-        resultDiv.innerHTML += '\n';
-      });
-      
-      if (matchList.length >= maxMatches) {
-        resultDiv.innerHTML += `\n<span style="color:#888">(${maxMatches}件で打ち切り)</span>`;
-      }
-    } else {
-      resultDiv.innerHTML = '<span style="color:#c44">✗ マッチなし</span>';
+
+  runWorkerTask('execute-main', {
+    tool: 'regex-test',
+    input,
+    options: {
+      pattern,
+      flags: getRegexFlags()
     }
-  } catch (e) {
-    resultDiv.innerHTML = `<span style="color:red">エラー: ${e.message}</span>`;
-  }
+  })
+    .then(result => {
+      if (result.resultHtml !== undefined) {
+        resultDiv.innerHTML = result.resultHtml;
+      }
+    })
+    .catch(error => {
+      resultDiv.innerHTML = `<span style="color:red">エラー: ${error.message}</span>`;
+    });
 }
 
 function executeRegexExtract() {
   const input = document.getElementById('inputText').value;
   const pattern = document.getElementById('regex-pattern').value;
-  
-  if (!pattern) {
-    document.getElementById('regex-result').innerHTML = '<span style="color:#888">パターンを入力してください</span>';
-    return;
-  }
-  
-  try {
-    const flags = getRegexFlags();
-    const regex = new RegExp(pattern, flags.includes('g') ? flags : flags + 'g');
-    const matches = input.match(regex);
-    
-    if (matches) {
-      document.getElementById('outputText').value = matches.join('\n');
-      updateStats('outputText', 'output');
-      document.getElementById('regex-result').innerHTML = `<span style="color:green">✓ ${matches.length}件を抽出しました</span>`;
-    } else {
-      document.getElementById('regex-result').innerHTML = '<span style="color:#c44">✗ マッチなし</span>';
+  const resultDiv = document.getElementById('regex-result');
+  runWorkerTask('execute-main', {
+    tool: 'regex-extract',
+    input,
+    options: {
+      pattern,
+      flags: getRegexFlags()
     }
-  } catch (e) {
-    document.getElementById('regex-result').innerHTML = `<span style="color:red">エラー: ${e.message}</span>`;
-  }
+  })
+    .then(result => {
+      if (result.output !== undefined) {
+        applyOutput(result.output);
+      }
+      if (result.resultHtml !== undefined) {
+        resultDiv.innerHTML = result.resultHtml;
+      }
+    })
+    .catch(error => {
+      resultDiv.innerHTML = `<span style="color:red">エラー: ${error.message}</span>`;
+    });
 }
 
 function executeRegexReplace() {
   const input = document.getElementById('inputText').value;
   const pattern = document.getElementById('regex-pattern').value;
   const replacement = document.getElementById('regex-replace').value;
-  
-  if (!pattern) {
-    document.getElementById('regex-result').innerHTML = '<span style="color:#888">パターンを入力してください</span>';
-    return;
-  }
-  
-  try {
-    const flags = getRegexFlags();
-    const regex = new RegExp(pattern, flags);
-    const result = input.replace(regex, replacement);
-    const matchCount = (input.match(new RegExp(pattern, flags.includes('g') ? flags : flags + 'g')) || []).length;
-    
-    document.getElementById('outputText').value = result;
-    updateStats('outputText', 'output');
-    document.getElementById('regex-result').innerHTML = `<span style="color:green">✓ ${matchCount}件を置換しました</span>`;
-  } catch (e) {
-    document.getElementById('regex-result').innerHTML = `<span style="color:red">エラー: ${e.message}</span>`;
+  const resultDiv = document.getElementById('regex-result');
+  runWorkerTask('execute-main', {
+    tool: 'regex-replace',
+    input,
+    options: {
+      pattern,
+      flags: getRegexFlags(),
+      replacement
+    }
+  })
+    .then(result => {
+      if (result.output !== undefined) {
+        applyOutput(result.output);
+      }
+      if (result.resultHtml !== undefined) {
+        resultDiv.innerHTML = result.resultHtml;
+      }
+    })
+    .catch(error => {
+      resultDiv.innerHTML = `<span style="color:red">エラー: ${error.message}</span>`;
+    });
+}
+
+function executeMdHtml(mode) {
+  const input = document.getElementById('inputText').value;
+  const previewSection = document.getElementById('md-preview-section');
+  const previewArea = document.getElementById('md-preview');
+  runWorkerTask('execute-main', {
+    tool: 'md-html',
+    input,
+    options: { mode }
+  })
+    .then(result => {
+      if (mode === 'preview') {
+        if (previewSection) previewSection.style.display = 'block';
+        if (previewArea) previewArea.innerHTML = result.previewHtml || '';
+        return;
+      }
+      if (previewSection) previewSection.style.display = 'none';
+      if (result.output !== undefined) {
+        applyOutput(result.output);
+      }
+    })
+    .catch(error => alert(`処理中にエラーが発生しました: ${error.message}`));
+}
+
+function closeMdPreview() {
+  const previewSection = document.getElementById('md-preview-section');
+  if (previewSection) {
+    previewSection.style.display = 'none';
   }
 }
 
@@ -3818,35 +5099,24 @@ function htmlToMarkdown(html) {
 // ============================================
 function executeSqlFormat(mode) {
   const input = document.getElementById('inputText').value;
-  let output = '';
-  
   const indentType = document.getElementById('sql-indent-type').value.replace('\\t', '\t');
   const uppercaseKeywords = document.getElementById('sql-uppercase-keywords').checked;
   const newlineBeforeAnd = document.getElementById('sql-newline-before-and').checked;
   const newlineAfterComma = document.getElementById('sql-newline-after-comma').checked;
-  
-  switch(mode) {
-    case 'format':
-      output = formatSql(input, {
-        indent: indentType,
-        uppercaseKeywords,
-        newlineBeforeAnd,
-        newlineAfterComma
-      });
-      break;
-    case 'minify':
-      output = minifySql(input);
-      break;
-    case 'toInsert':
-      output = valuesToInsert(input);
-      break;
-    case 'toInClause':
-      output = valuesToInClause(input);
-      break;
-  }
-  
-  document.getElementById('outputText').value = output;
-  updateStats('outputText', 'output');
+  const options = {
+    mode,
+    indentType,
+    uppercaseKeywords,
+    newlineBeforeAnd,
+    newlineAfterComma,
+    tableName: document.getElementById('sql-table-name').value || 'table_name',
+    columnName: document.getElementById('sql-column-name').value || 'column_name',
+    quoteValues: document.getElementById('sql-quote-values').checked,
+    quoteChar: document.getElementById('sql-quote-char').value
+  };
+  runWorkerTask('execute-main', { tool: 'sql-format', input, options })
+    .then(result => applyOutput(result.output || ''))
+    .catch(error => alert(`処理中にエラーが発生しました: ${error.message}`));
 }
 
 // SQLキーワード
@@ -3993,272 +5263,54 @@ function valuesToInClause(input) {
 // ============================================
 function executeLineOps(mode) {
   const input = document.getElementById('inputText').value;
-  let lines = input.split('\n');
-  let output = '';
-  
-  switch(mode) {
-    case 'trimLeft':
-      output = lines.map(line => line.replace(/^[\s　]+/, '')).join('\n');
-      break;
-    case 'trimRight':
-      output = lines.map(line => line.replace(/[\s　]+$/, '')).join('\n');
-      break;
-    
-    // ソート機能
-    case 'sortAlpha':
-    case 'sortAlphaCase':
-    case 'sortNatural':
-    case 'sortNaturalCase':
-    case 'sortLength':
-    case 'sortRandom':
-    case 'sortReverse':
-    case 'sortAsc':
-    case 'sortDesc': {
-      const delimiter = document.getElementById('sort-delimiter').value;
-      const colNum = parseInt(document.getElementById('sort-column').value) - 1 || 0;
-      const desc = document.getElementById('sort-desc').checked;
-      
-      // ソート用のキーを取得する関数
-      const getKey = (line) => {
-        if (delimiter) {
-          const parts = line.split(delimiter);
-          return parts[colNum] !== undefined ? parts[colNum] : line;
-        }
-        return line;
-      };
-      
-      let sortFn;
-      
-      switch (mode) {
-        case 'sortAlpha':
-        case 'sortAsc':
-          // アルファベット順（大文字小文字区別なし）
-          sortFn = (a, b) => getKey(a).localeCompare(getKey(b), 'ja', { sensitivity: 'base' });
-          break;
-        case 'sortAlphaCase':
-          // アルファベット順（大文字小文字区別あり）- ASCII順
-          sortFn = (a, b) => {
-            const keyA = getKey(a), keyB = getKey(b);
-            return keyA < keyB ? -1 : keyA > keyB ? 1 : 0;
-          };
-          break;
-        case 'sortNatural':
-          // 自然順ソート（大文字小文字区別なし）- 数字を数値として扱う
-          sortFn = (a, b) => getKey(a).localeCompare(getKey(b), 'ja', { numeric: true, sensitivity: 'base' });
-          break;
-        case 'sortNaturalCase':
-          // 自然順ソート（大文字小文字区別あり）- 数字を数値として扱い、ASCII順
-          sortFn = (a, b) => {
-            const keyA = getKey(a), keyB = getKey(b);
-            const re = /(\d+)|(\D+)/g;
-            const aParts = keyA.match(re) || [];
-            const bParts = keyB.match(re) || [];
-            
-            for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
-              const aPart = aParts[i] || '';
-              const bPart = bParts[i] || '';
-              
-              const aNum = parseInt(aPart);
-              const bNum = parseInt(bPart);
-              
-              if (!isNaN(aNum) && !isNaN(bNum)) {
-                if (aNum !== bNum) return aNum - bNum;
-              } else {
-                if (aPart !== bPart) return aPart < bPart ? -1 : 1;
-              }
-            }
-            return 0;
-          };
-          break;
-        case 'sortLength':
-          // 文字数順
-          sortFn = (a, b) => getKey(a).length - getKey(b).length;
-          break;
-        case 'sortRandom':
-          // ランダム
-          sortFn = () => Math.random() - 0.5;
-          break;
-        case 'sortReverse':
-          // 逆順（現在の順序を反転）
-          output = lines.reverse().join('\n');
-          break;
-        case 'sortDesc':
-          // 降順（後方互換）
-          sortFn = (a, b) => getKey(b).localeCompare(getKey(a), 'ja', { numeric: true });
-          break;
-      }
-      
-      if (mode !== 'sortReverse') {
-        lines.sort(sortFn);
-        // 降順オプションがONの場合は結果を反転（ランダム以外）
-        if (desc && mode !== 'sortRandom') {
-          lines.reverse();
-        }
-        output = lines.join('\n');
-      }
-      break;
-    }
-    
-    case 'uniq':
-      // 連続した重複行のみ削除（unixのuniqコマンドと同様）
-      output = lines.filter((line, i) => i === 0 || line !== lines[i - 1]).join('\n');
-      break;
-    case 'combine': {
-      // 行結合
-      const delimiter = document.getElementById('combine-delimiter').value;
-      const skipEmpty = document.getElementById('combine-skip-empty').checked;
-      let targetLines = lines;
-      if (skipEmpty) {
-        targetLines = lines.filter(line => line.trim() !== '');
-      }
-      output = targetLines.join(delimiter);
-      break;
-    }
-    case 'removeEmpty': {
-      // 空行削除
-      const removeWhitespaceOnly = document.getElementById('empty-whitespace').checked;
-      if (removeWhitespaceOnly) {
-        output = lines.filter(line => line.trim() !== '').join('\n');
-      } else {
-        output = lines.filter(line => line !== '').join('\n');
-      }
-      break;
-    }
-    case 'filterContaining':
-    case 'filterNotContaining': {
-      // 指定文字列を含む/含まない行を削除
-      const filterText = document.getElementById('filter-text').value;
-      const caseSensitive = document.getElementById('filter-case').checked;
-      const useRegex = document.getElementById('filter-regex').checked;
-      const showRemoved = document.getElementById('filter-show-removed').checked;
+  const sortDelimiter = document.getElementById('sort-delimiter').value;
+  const combineDelimiter = document.getElementById('combine-delimiter').value;
+  const options = {
+    mode,
+    delimiter: mode === 'combine' ? combineDelimiter : sortDelimiter,
+    colNum: parseInt(document.getElementById('sort-column').value) - 1 || 0,
+    desc: document.getElementById('sort-desc').checked,
+    skipEmpty: document.getElementById('combine-skip-empty').checked,
+    removeWhitespaceOnly: document.getElementById('empty-whitespace').checked,
+    filterText: document.getElementById('filter-text').value,
+    filterCaseSensitive: document.getElementById('filter-case').checked,
+    useRegex: document.getElementById('filter-regex').checked,
+    showRemoved: document.getElementById('filter-show-removed').checked,
+    trim: document.getElementById('dup-trim').checked,
+    keepOrder: document.getElementById('dup-keep-order').checked,
+    caseSensitiveDup: document.getElementById('dup-case').checked,
+    repeatCount: parseInt(document.getElementById('repeat-count').value) || 10,
+    perRow: parseInt(document.getElementById('repeat-per-row').value) || 1,
+    separator: document.getElementById('repeat-separator').value,
+    eachLine: document.getElementById('repeat-each-line').checked
+  };
+
+  runWorkerTask('execute-main', { tool: 'line-ops', input, options: {
+    mode: options.mode,
+    delimiter: options.delimiter,
+    colNum: options.colNum,
+    desc: options.desc,
+    skipEmpty: options.skipEmpty,
+    removeWhitespaceOnly: options.removeWhitespaceOnly,
+    filterText: options.filterText,
+    caseSensitive: options.mode === 'removeDuplicates' ? options.caseSensitiveDup : options.filterCaseSensitive,
+    useRegex: options.useRegex,
+    showRemoved: options.showRemoved,
+    trim: options.trim,
+    keepOrder: options.keepOrder,
+    repeatCount: options.repeatCount,
+    perRow: options.perRow,
+    separator: options.separator,
+    eachLine: options.eachLine
+  } })
+    .then(result => {
+      applyOutput(result.output || '');
       const countDiv = document.getElementById('filter-removed-count');
-      const isContaining = (mode === 'filterContaining');
-      
-      if (!filterText) {
-        output = input;
-        countDiv.textContent = '検索文字列を入力してください';
-        break;
+      if (countDiv && result.filterMessage !== undefined) {
+        countDiv.textContent = result.filterMessage;
       }
-      
-      let matcher;
-      try {
-        if (useRegex) {
-          const flags = caseSensitive ? 'g' : 'gi';
-          matcher = new RegExp(filterText, flags);
-        } else {
-          const escaped = filterText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const flags = caseSensitive ? '' : 'i';
-          matcher = new RegExp(escaped, flags);
-        }
-      } catch (e) {
-        output = input;
-        countDiv.textContent = '正規表現エラー: ' + e.message;
-        break;
-      }
-      
-      const kept = [];
-      const removed = [];
-      
-      for (const line of lines) {
-        const matches = matcher.test(line);
-        // Reset lastIndex for global regex
-        matcher.lastIndex = 0;
-        
-        // filterContaining: 含む行を削除 → マッチしたら削除
-        // filterNotContaining: 含まない行を削除 → マッチしなかったら削除
-        const shouldRemove = isContaining ? matches : !matches;
-        
-        if (shouldRemove) {
-          removed.push(line);
-        } else {
-          kept.push(line);
-        }
-      }
-      
-      output = kept.join('\n');
-      
-      // 削除された行数を表示
-      const modeText = isContaining ? '含む' : '含まない';
-      countDiv.textContent = `${removed.length} 行を削除しました（"${filterText}" を${modeText}行）`;
-      
-      // 削除された行を表示する場合
-      if (showRemoved && removed.length > 0) {
-        output += '\n\n--- 削除された行 (' + removed.length + '行) ---\n' + removed.join('\n');
-      }
-      break;
-    }
-    case 'removeDuplicates': {
-      // すべての重複行を削除
-      const caseSensitive = document.getElementById('dup-case').checked;
-      const trim = document.getElementById('dup-trim').checked;
-      const keepOrder = document.getElementById('dup-keep-order').checked;
-      const seen = new Set();
-      const result = [];
-      
-      for (const line of lines) {
-        let key = trim ? line.trim() : line;
-        if (!caseSensitive) key = key.toLowerCase();
-        
-        if (!seen.has(key)) {
-          seen.add(key);
-          result.push(line);
-        }
-      }
-      
-      if (!keepOrder) {
-        result.sort((a, b) => a.localeCompare(b, 'ja'));
-      }
-      
-      output = result.join('\n');
-      break;
-    }
-    case 'repeat': {
-      // 繰り返し生成
-      const repeatCount = parseInt(document.getElementById('repeat-count').value) || 10;
-      const perRow = parseInt(document.getElementById('repeat-per-row').value) || 1;
-      const separator = document.getElementById('repeat-separator').value;
-      const eachLine = document.getElementById('repeat-each-line').checked;
-      
-      if (eachLine) {
-        // 各行を個別に繰り返す
-        const resultLines = [];
-        for (const line of lines) {
-          if (line.trim() === '') {
-            resultLines.push(line);
-            continue;
-          }
-          const repeated = [];
-          for (let i = 0; i < repeatCount; i++) {
-            repeated.push(line);
-          }
-          // perRowごとに行を分割
-          const chunks = [];
-          for (let i = 0; i < repeated.length; i += perRow) {
-            chunks.push(repeated.slice(i, i + perRow).join(separator));
-          }
-          resultLines.push(chunks.join('\n'));
-        }
-        output = resultLines.join('\n');
-      } else {
-        // 入力全体を1つのテキストとして繰り返す
-        const text = input;
-        const repeated = [];
-        for (let i = 0; i < repeatCount; i++) {
-          repeated.push(text);
-        }
-        // perRowごとに行を分割
-        const chunks = [];
-        for (let i = 0; i < repeated.length; i += perRow) {
-          chunks.push(repeated.slice(i, i + perRow).join(separator));
-        }
-        output = chunks.join('\n');
-      }
-      break;
-    }
-  }
-  
-  document.getElementById('outputText').value = output;
-  updateStats('outputText', 'output');
+    })
+    .catch(error => alert(`処理中にエラーが発生しました: ${error.message}`));
 }
 
 // Utilities
@@ -4281,13 +5333,35 @@ function swapTexts() {
 
 function sortInput(order) {
   const textarea = document.getElementById('inputText');
-  const lines = textarea.value.split('\n');
-  lines.sort((a, b) => {
-    const result = a.localeCompare(b, 'ja');
-    return order === 'asc' ? result : -result;
-  });
-  textarea.value = lines.join('\n');
-  updateStats('inputText', 'input');
+  const input = textarea.value;
+  const mode = order === 'asc' ? 'sortAsc' : 'sortDesc';
+  runWorkerTask('execute-main', {
+    tool: 'line-ops',
+    input,
+    options: {
+      mode,
+      delimiter: '',
+      colNum: 0,
+      desc: false,
+      skipEmpty: false,
+      removeWhitespaceOnly: false,
+      filterText: '',
+      caseSensitive: false,
+      useRegex: false,
+      showRemoved: false,
+      trim: false,
+      keepOrder: true,
+      repeatCount: 1,
+      perRow: 1,
+      separator: '',
+      eachLine: false
+    }
+  })
+    .then(result => {
+      textarea.value = result.output || '';
+      updateStats('inputText', 'input');
+    })
+    .catch(error => alert(`処理中にエラーが発生しました: ${error.message}`));
 }
 
 async function copyToClipboard() {
