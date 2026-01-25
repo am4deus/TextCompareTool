@@ -407,8 +407,20 @@ body.result-only-mode .results-section {
   .actions,
   footer,
   .results-title,
-  .results-actions {
+  .results-actions,
+  .location-pane,
+  .location-pane-viewport {
     display: none !important;
+  }
+  
+  .diff-scroll-container {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  
+  .diff-row.current-diff-row td {
+    outline: none !important;
+    background: transparent !important;
   }
   
   .results-header {
