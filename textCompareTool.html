@@ -3461,7 +3461,32 @@ function toggleDiffOnly() {
 let resultOnlyMode = false;
 let diffRowElements = [];
 let diffMarkers = [];
+let totalRowCount = 0;
 let currentDiffIndex = -1;
+
+function findNearestDiffIndexByRatio(ratio) {
+  if (diffRowElements.length === 0) return -1;
+  let bestIndex = 0;
+  let bestDistance = Infinity;
+  for (let i = 0; i < diffRowElements.length; i++) {
+    const rowIndex = Number(diffRowElements[i].dataset.rowIndex || 0);
+    const dist = Math.abs(rowIndex - ratio);
+    if (dist < bestDistance) {
+      bestDistance = dist;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+function findNearestDiffIndexByY(clientY, barEl) {
+  const rect = barEl.getBoundingClientRect();
+  if (totalRowCount === 0 || rect.height === 0) return -1;
+  const clampedY = Math.min(rect.bottom, Math.max(rect.top, clientY));
+  const ratio = (clampedY - rect.top) / rect.height;
+  const rowPosition = ratio * Math.max(0, totalRowCount - 1);
+  return findNearestDiffIndexByRatio(rowPosition);
+}
 
 function updateResultOnlyButton() {
   const btn = document.getElementById('toggleResultOnlyBtn');
@@ -3538,6 +3563,7 @@ function updateLocationPane() {
   if (!barEl) return;
 
   const rowsAll = Array.from(document.querySelectorAll('#diffBody tr')).filter(row => !row.classList.contains('stats-row'));
+  totalRowCount = rowsAll.length;
   diffRowElements = rowsAll.filter(row => row.classList.contains('diff-row'));
   diffMarkers = [];
   barEl.innerHTML = '';
@@ -3554,6 +3580,14 @@ function updateLocationPane() {
     diffMarkers.push(marker);
     barEl.appendChild(marker);
   });
+
+  barEl.onclick = (event) => {
+    if (diffRowElements.length === 0) return;
+    const nearestIndex = findNearestDiffIndexByY(event.clientY, barEl);
+    if (nearestIndex >= 0) {
+      setCurrentDiffIndex(nearestIndex);
+    }
+  };
 
   if (diffRowElements.length > 0) {
     setCurrentDiffIndex(0, { scroll: false });
@@ -4102,6 +4136,7 @@ function clearAll() {
   document.getElementById('results').classList.remove('visible');
   diffRowElements = [];
   diffMarkers = [];
+  totalRowCount = 0;
   currentDiffIndex = -1;
   updateDiffLocationStatus();
   updateDiffLocationControls();
