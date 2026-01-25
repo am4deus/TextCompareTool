@@ -356,6 +356,31 @@ button {
   box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
+/* Sample selector */
+.sample-select {
+  font-family: sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s;
+  outline: none;
+}
+
+.sample-select:hover {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+
+.sample-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
 /* Diff-only mode: hide rows without diffs */
 #results.diff-only-mode #diffBody tr.no-diff-row {
   display: none;
@@ -1164,9 +1189,12 @@ footer a:hover {
     </div>
     <button class="btn-secondary btn-icon" onclick="swapTexts()" title="左右入れ替え">⇄<span>入替</span></button>
     <button class="btn-secondary" onclick="clearAll()">クリア</button>
-    <button class="btn-secondary" onclick="loadSample()">サンプル</button>
-    <button class="btn-secondary" onclick="loadSample2()">サンプル2</button>
-    <button class="btn-secondary" onclick="loadSample3()">サンプル3</button>
+    <select class="sample-select" onchange="loadSampleBySelect(this.value); this.selectedIndex=0;">
+      <option value="">-- サンプル選択 --</option>
+      <option value="1">サンプル１</option>
+      <option value="2">サンプル２</option>
+      <option value="3">サンプル３</option>
+    </select>
     <div class="theme-selector">
       <button class="theme-btn dark" onclick="setTheme('dark')" title="ダーク"></button>
       <button class="theme-btn light active" onclick="setTheme('light')" title="ライト"></button>
@@ -4453,6 +4481,16 @@ function loadSample3() {
   document.getElementById('textA').value = a;
   document.getElementById('textB').value = b;
   compare();
+}
+
+// セレクトボックスからサンプルを読み込み
+function loadSampleBySelect(value) {
+  if (!value) return;
+  switch(value) {
+    case '1': loadSample(); break;
+    case '2': loadSample2(); break;
+    case '3': loadSample3(); break;
+  }
 }
 
 
