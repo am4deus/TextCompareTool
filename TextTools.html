@@ -3321,6 +3321,7 @@ const workerScript = document.getElementById('text-tools-worker').textContent;
 const worker = window.Worker ? new Worker(URL.createObjectURL(new Blob([workerScript], { type: 'text/javascript' }))) : null;
 const workerTasks = new Map();
 let workerTaskId = 0;
+let syncHandlers = null;
 
 if (worker) {
   worker.addEventListener('message', (event) => {
@@ -3337,6 +3338,56 @@ if (worker) {
 }
 
 function runWorkerTask(action, payload) {
+  if (window.__syncTestMode) {
+    try {
+      if (!syncHandlers) {
+        const syncSelf = { importScripts: () => {} };
+        const factory = new Function('self', `${workerScript}\nreturn handlers;`);
+        syncHandlers = factory(syncSelf);
+      }
+      const handler = syncHandlers[action];
+      if (!handler) {
+        const error = new Error(`Unknown action: ${action}`);
+        return {
+          then: () => ({ catch: (onRejected) => {
+            if (onRejected) onRejected(error);
+          } }),
+          catch: (onRejected) => {
+            if (onRejected) onRejected(error);
+          }
+        };
+      }
+      const result = handler(payload);
+      return {
+        then: (onFulfilled) => {
+          try {
+            if (onFulfilled) {
+              onFulfilled(result);
+            }
+            return { catch: () => {} };
+          } catch (error) {
+            return {
+              catch: (onRejected) => {
+                if (onRejected) onRejected(error);
+              }
+            };
+          }
+        },
+        catch: () => ({ then: (onFulfilled) => {
+          if (onFulfilled) onFulfilled(result);
+        } })
+      };
+    } catch (error) {
+      return {
+        then: () => ({ catch: (onRejected) => {
+          if (onRejected) onRejected(error);
+        } }),
+        catch: (onRejected) => {
+          if (onRejected) onRejected(error);
+        }
+      };
+    }
+  }
   if (!worker) {
     return Promise.reject(new Error('WebWorker is not supported in this environment.'));
   }
@@ -5564,6 +5615,8 @@ function runAllTests() {
   
   let passed = 0;
   let failed = 0;
+
+  window.__syncTestMode = true;
   
   function test(name, fn) {
     try {
@@ -7019,6 +7072,7 @@ function runAllTests() {
   console.log('========================================');
   console.log(`テスト完了: ${passed} 成功, ${failed} 失敗`);
   console.log('========================================');
+  window.__syncTestMode = false;
   
   return { passed, failed };
 }
