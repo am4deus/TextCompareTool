@@ -2067,6 +2067,33 @@ function repairMidlineNewlineRows(rows) {
       let mergedRow = null;
       let matched = false;
 
+      const contSideAfterEqual = singleSideRow(rows[i + 2]);
+      const leadSideAfterEqual = singleSideRow(rows[i]);
+      if (contSideAfterEqual && !leadSideAfterEqual) {
+        const baseRow = rows[i];
+        const nlRow = rows[i + 1];
+        const contRow = rows[i + 2];
+
+        const merged = {
+          a: { tokens: baseRow.a.tokens.slice(), isEmpty: baseRow.a.tokens.length === 0 },
+          b: { tokens: baseRow.b.tokens.slice(), isEmpty: baseRow.b.tokens.length === 0 }
+        };
+
+        if (contSideAfterEqual === 'a') {
+          merged.a.tokens = merged.a.tokens.concat(contRow.a.tokens.slice());
+          merged.a.isEmpty = merged.a.tokens.length === 0;
+        } else {
+          merged.b.tokens = merged.b.tokens.concat(contRow.b.tokens.slice());
+          merged.b.isEmpty = merged.b.tokens.length === 0;
+        }
+
+        out.push(merged);
+        out.push(nlRow);
+
+        i += 2;
+        continue;
+      }
+
       for (const side of ['a', 'b']) {
         const other = side === 'a' ? 'b' : 'a';
         const leadSide = singleSideRow(rows[i]);
@@ -3833,6 +3860,27 @@ function test_chars_repair_merges_trailing_punctuation() {
   _tAssert(!hasPunctRow, "Chars diff should not isolate trailing punctuation on its own row");
 }
 
+function test_chars_repair_merges_punctuation_after_equal_row() {
+  const A = [
+    "But a bit of better butter,",
+    "",
+    "That will make my batter better."
+  ].join("\n");
+
+  const B = [
+    "But a bit of better butter",
+    "Will make my batter better."
+  ].join("\n");
+
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  let rows = renderDiff(diff);
+  rows = repairMidlineNewlineRows(rows);
+
+  const aLines = rows.map(r => r.a.tokens.map(t => t.value).join(''));
+  const hasCommaRow = aLines.some(line => line.trim() === ',');
+  _tAssert(!hasCommaRow, "Chars diff should not split ',' into its own row after equal-line merge");
+}
+
 
 function test_line_replace_block_alignment() {
   const t0 = _tLogStart("test_line_replace_block_alignment");
@@ -4003,7 +4051,8 @@ function runAllTests() {
     test_scoreRows_penalizes_newline_only_more_than_empty_side,
     test_chars_repair_does_not_split_it_will_by_newline_move,
     test_chars_repair_does_not_split_that_will,
-    test_chars_repair_merges_trailing_punctuation
+    test_chars_repair_merges_trailing_punctuation,
+    test_chars_repair_merges_punctuation_after_equal_row
   ];
 
   const started = performance.now();
