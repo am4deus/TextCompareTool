@@ -3463,6 +3463,7 @@ let diffRowElements = [];
 let diffMarkers = [];
 let totalRowCount = 0;
 let currentDiffIndex = -1;
+let isLocationDragging = false;
 
 function findNearestDiffIndexByRatio(ratio) {
   if (diffRowElements.length === 0) return -1;
@@ -3549,9 +3550,9 @@ function setCurrentDiffIndex(index, options = { scroll: true }) {
     row.classList.add('current-diff-row');
     if (options.scroll) {
       if (row.id) {
-        history.replaceState(null, '', `#${row.id}`);
+        location.hash = row.id;
       }
-      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }
   if (marker) {
@@ -3584,12 +3585,25 @@ function updateLocationPane() {
     barEl.appendChild(marker);
   });
 
-  barEl.onclick = (event) => {
+  const handleBarSelection = (event) => {
     if (diffRowElements.length === 0) return;
     const nearestIndex = findNearestDiffIndexByY(event.clientY, barEl);
     if (nearestIndex >= 0) {
       setCurrentDiffIndex(nearestIndex);
     }
+  };
+
+  barEl.onclick = handleBarSelection;
+  barEl.onmousedown = (event) => {
+    isLocationDragging = true;
+    handleBarSelection(event);
+  };
+  window.onmouseup = () => {
+    isLocationDragging = false;
+  };
+  window.onmousemove = (event) => {
+    if (!isLocationDragging) return;
+    handleBarSelection(event);
   };
 
   if (diffRowElements.length > 0) {
