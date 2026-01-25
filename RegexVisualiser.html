@@ -248,6 +248,35 @@ button {
 .flag:hover { border-color: var(--text-muted); color: var(--text); }
 .flag input { margin: 0; accent-color: var(--accent); }
 
+/* Sample selector */
+.sample-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sample-selector select {
+  font-family: sans-serif;
+  font-size: 0.85rem;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s;
+  outline: none;
+}
+
+.sample-selector select:hover {
+  border-color: var(--text-muted);
+}
+
+.sample-selector select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
 /* Theme selector */
 .theme-selector {
   display: flex;
@@ -458,6 +487,14 @@ function setTheme(theme) {
       <input id="input" class="input" value="^(a|b)*?$" />
       <span class="re-slash">/</span>
       <span id="flagBox"></span>
+    </div>
+
+    <div class="sample-selector">
+      <select id="sampleSelect">
+        <option value="">-- サンプル選択 --</option>
+        <option value="^(a|b)*?$">デフォルトサンプル</option>
+        <option value="^[a-zA-Z0-9.!#$%&amp;'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$">メールアドレス</option>
+      </select>
     </div>
 
     <button id="visualIt" class="btn-primary">可視化</button>
@@ -731,6 +768,21 @@ function initListeners() {
     }
     setTimeout(visualIt,50);
   });
+
+  // サンプルセレクトボックスのイベントリスナー
+  var sampleSelect = $('sampleSelect');
+  if (sampleSelect) {
+    sampleSelect.addEventListener('change', function() {
+      var selectedValue = this.value;
+      if (selectedValue) {
+        setInputValue(selectedValue);
+        visualIt();
+      }
+      // 選択後にプレースホルダーに戻す
+      this.selectedIndex = 0;
+    });
+  }
+
   visualBtn.addEventListener('click',function () {
     visualIt();
   });
