@@ -3604,8 +3604,7 @@ function compare() {
     case 'hybrid':
     case 'chars':
     default:
-      const result = computeHybridRows(textA, textB);
-      rows = _normalizeRowsTokens(result.rows);
+      rows = _normalizeRowsTokens(buildRowsByLines(textA, textB));
       break;
   }
   
