@@ -1169,6 +1169,70 @@ function computeLCS(a, b) {
   return dp;
 }
 
+/**
+ * LCS（computeLCS）で得た「等価行の対応（match）」をアンカーとして、
+ * その間の差分（delete/insert）を「元の位置のまま」吐く。
+ * これにより、空行（''）など「位置が意味を持つ行」が、
+ * LCS復元タイブレークで前後にズレて「If I putの前の改行が消える」問題を防ぐ。
+ */
+function generateDiffAnchored(a, b) {
+  const dp = computeLCS(a, b);
+  let i = a.length;
+  let j = b.length;
+  const matches = [];
+
+  // LCS一致ペアの復元（同点は "up優先" で安定化）
+  while (i > 0 && j > 0) {
+    if (a[i - 1] === b[j - 1]) {
+      matches.push([i - 1, j - 1]);
+      i--;
+      j--;
+    } else {
+      const up = dp[i - 1][j];
+      const left = dp[i][j - 1];
+      if (up >= left) i--;
+      else j--;
+    }
+  }
+
+  matches.reverse();
+
+  const diff = [];
+  let ai = 0;
+  let bi = 0;
+
+  for (const [ma, mb] of matches) {
+    // マッチまでのギャップは、元配列の順序どおりに出す（ここが重要）
+    while (ai < ma) {
+      diff.push({ type: 'delete', value: a[ai] });
+      ai++;
+    }
+    while (bi < mb) {
+      diff.push({ type: 'insert', value: b[bi] });
+      bi++;
+    }
+
+    // マッチ行
+    diff.push({ type: 'equal', value: a[ma] });
+    ai = ma + 1;
+    bi = mb + 1;
+  }
+
+  // 末尾ギャップ
+  while (ai < a.length) {
+    diff.push({ type: 'delete', value: a[ai] });
+    ai++;
+  }
+  while (bi < b.length) {
+    diff.push({ type: 'insert', value: b[bi] });
+    bi++;
+  }
+
+  return diff;
+}
+
+
+
 // 差分を生成
 function generateDiff(a, b) {
   const dp = computeLCS(a, b);
@@ -1181,12 +1245,50 @@ function generateDiff(a, b) {
       diff.unshift({ type: 'equal', value: a[i - 1] });
       i--;
       j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      continue;
+    }
+
+    // dpの比較（LCS長）
+    const left = (j > 0) ? dp[i][j - 1] : -1;
+    const up   = (i > 0) ? dp[i - 1][j] : -1;
+
+    // 明確にleftが勝つ → insert
+    if (j > 0 && (i === 0 || left > up)) {
       diff.unshift({ type: 'insert', value: b[j - 1] });
       j--;
-    } else {
+      continue;
+    }
+
+    // 明確にupが勝つ → delete
+    if (i > 0 && (j === 0 || up > left)) {
       diff.unshift({ type: 'delete', value: a[i - 1] });
       i--;
+      continue;
+    }
+
+    // ★同点タイブレーク（左右入替でも「空行」の位置が崩れないようにする）
+    // - 片側だけが空行なら、その空行側の操作を優先（insert空行 / delete空行を先に出す）
+    // - それ以外は安定のためdelete優先
+    const aVal = (i > 0) ? a[i - 1] : null;
+    const bVal = (j > 0) ? b[j - 1] : null;
+    const aEmpty = (aVal === '');
+    const bEmpty = (bVal === '');
+
+    if (j > 0 && bEmpty && !aEmpty) {
+      diff.unshift({ type: 'insert', value: b[j - 1] });
+      j--;
+    } else if (i > 0 && aEmpty && !bEmpty) {
+      diff.unshift({ type: 'delete', value: a[i - 1] });
+      i--;
+    } else {
+      // どちらでも良い場合はdelete優先で安定化
+      if (i > 0) {
+        diff.unshift({ type: 'delete', value: a[i - 1] });
+        i--;
+      } else {
+        diff.unshift({ type: 'insert', value: b[j - 1] });
+        j--;
+      }
     }
   }
   
@@ -1296,6 +1398,17 @@ function tokenValueToString(value, _depth = 0) {
 
 // 「比較処理に入れる前」用: 表示用に強制文字列化（[object Object] を根絶）
 function toPlainString(v) {
+  // 安全策：内部トークン（BLANK:...）がもし漏れても表示しない（部分一致でも除去）
+  if (typeof v === 'string') {
+    // 行全体がトークンの場合は空にする
+    if (/^(?:\uE000|\u0000)?BLANK:[AB]:\d+$/.test(v)) return '';
+    // 文字差分で分割された場合も考慮して、断片にBLANKが残っていたら消す
+    if (/BLANK:[AB]:\d+/.test(v)) return v.replace(/(?:\uE000|\u0000)?BLANK:[AB]:\d+/g, '');
+  }
+
+  // 安全策：内部トークン（BLANK:...）が漏れてきた場合は表示しない
+  if (typeof v === 'vtring' && /^\u0000?BLANK:[AB]:\d+$/.tevt(v)) return '';
+
   return tokenValueToString(v);
 }
 // 行分割（末尾改行も保持: "a\n" -> ["a",""]）
@@ -1323,18 +1436,77 @@ function diffTokensToRowTokens(diffTokens) {
 }
 
 // テキスト全体を「行単位」でLCS差分 → 行ごとに（必要なら行内も）差分化して rows を作る
+// 行差分の復元結果で、空行（''）の insert/delete が「等価行の後ろ」に付いてしまうと
+// 「次の行の前の改行」が見えなくなる。空行は可能な限り「次の等価行の直前」に寄せる。
+function normalizeEmptyLineEdits(lineDiff) {
+  const out = lineDiff.slice();
+  for (let i = 0; i < out.length; i++) {
+    const cur = out[i];
+    if (!cur) continue;
+    const isEmptyEdit =
+      (cur.type === 'insert' || cur.type === 'delete') &&
+      (cur.value === '');
+    if (!isEmptyEdit) continue;
+
+    // 直前が equal の連続なら、そこを越えて前へ寄せる（等価行の「前」に付ける）
+    let j = i;
+    while (j > 0) {
+      const prev = out[j - 1];
+      if (!prev) break;
+      if (prev.type !== 'equal') break;
+      if (prev.value === '') break; // 空行equalは越えない（境界扱い）
+      // swap
+      out[j] = prev;
+      out[j - 1] = cur;
+      j--;
+    }
+  }
+  return out;
+}
+
 function buildRowsByLines(textA, textB) {
   const rows = [];
-  const linesA = splitLinesKeepEmpty(textA).map(toPlainString);
-  const linesB = splitLinesKeepEmpty(textB).map(toPlainString);
+  const rawLinesA = splitLinesKeepEmpty(textA).map(toPlainString);
+  const rawLinesB = splitLinesKeepEmpty(textB).map(toPlainString);
 
-  const lineDiff = generateDiff(linesA, linesB);
+  function _isBlankLine(s) { return s === '' || /^[ \t]+$/.test(s); }
+  // 空行/空白行は「位置が意味」なので、LCSで別位置同士が一致扱いにならないように side+index を埋め込む
+  const workLinesA = rawLinesA.map((ln, idx) => (_isBlankLine(ln) ? ('\uE000BLANK:A:' + idx) : ln));
+  const workLinesB = rawLinesB.map((ln, idx) => (_isBlankLine(ln) ? ('\uE000BLANK:B:' + idx) : ln));
+
+  const lineDiff = generateDiff(workLinesA, workLinesB);
 
   function pushRow(aTokens, bTokens, opts) {
     rows.push({
       a: { tokens: aTokens || [], isEmpty: !!(opts && opts.aEmpty) },
       b: { tokens: bTokens || [], isEmpty: !!(opts && opts.bEmpty) }
     });
+  }
+
+  function _decodeLine(v) {
+    if (typeof v === 'string') {
+      // 内部トークンは表示に漏らさない：まず「完全一致」だけをデコード対象にする
+      // 先頭の制御文字は環境差があるため、以下すべてに対応する：
+      //   "\uE000BLANK:A:3" / "\u0000BLANK:A:3" / "BLANK:A:3"
+      const mm = v.match(/^(?:\uE000|\u0000)?BLANK:(A|B):(\d+)$/);
+      if (mm) {
+        const side = mm[1];
+        const idx = (parseInt(mm[2], 10) | 0);
+        return (side === 'A') ? rawLinesA[idx] : rawLinesB[idx];
+      }
+      // 念のため（旧形式/断片）
+      if (v.indexOf('BLANK:') !== -1) {
+        // 例: "\uE000BLANK:A:3" のような先頭制御文字だけ除去して分解
+        const vv = v.replace(/^\uE000/, '').replace(/^\u0000/, '').replace(/^\0/, '');
+        if (/^BLANK:[AB]:\d+$/.test(vv)) {
+          const parts = vv.split(':');
+          const side = parts[1];
+          const idx = (parseInt(parts[2], 10) | 0);
+          return (side === 'A') ? rawLinesA[idx] : rawLinesB[idx];
+        }
+      }
+    }
+    return v;
   }
 
   // 行同士の「近さ」を出すための正規化（比較用）
@@ -1373,16 +1545,49 @@ function buildRowsByLines(textA, textB) {
   }
 
   function _lineSimilarity(aLine, bLine) {
-    // 空行は「改行の存在」そのものなので、空行と非空行がマッチしないようにする
-    const aEmpty = (aLine === '');
-    const bEmpty = (bLine === '');
-    if (aEmpty && bEmpty) return 1;
-    if (aEmpty !== bEmpty) return -1; // 絶対にペアリングさせない
+    // 置換ブロック内の行ペアリング用スコア（0～1、負値は「絶対にマッチさせない」）
+    // DP は「コスト最小化」なので、空行同士を過剰にマッチさせて本命の行がズレないように調整する。
 
+    const aEmpty = _isBlankLine(aLine);
+    const bEmpty = _isBlankLine(bLine);
+
+    // 空行と非空行は絶対にペアにしない
+    if (aEmpty !== bEmpty) return -1;
+
+    // 空行同士は「ほどほど」にマッチさせる（強すぎると空行が先に消費されてズレる）
+    // gap=0.65 なので、sim=0.40 は matchCost=0.60 < gap になり、必要なときだけ揃う。
+    if (aEmpty && bEmpty) return 0.40;
+
+    // 正規化（大小文字/句読点/連続空白など）
     const a = _normLineForMatch(aLine);
     const b = _normLineForMatch(bLine);
-    if (a === b) return 1;
-    return _diceSimilarity(a, b);
+
+    if (!a && !b) return 0.40; // 念のため
+    if (a === b) return 1.0;
+
+    // 基本：Dice 係数（2*共通 / (lenA+lenB)）
+    let best = _diceSimilarity(a, b);
+
+    // 追加：先頭の代名詞差（it/that/this など）でズレが起きやすいので、先頭語を落として比較してブースト
+    const stripLead = (s) => s.replace(/^(?:it|that|this|these|those|there|here)\s+/i, '');
+    const a2 = stripLead(a);
+    const b2 = stripLead(b);
+    if (a2 !== a || b2 !== b) {
+      const s2 = _diceSimilarity(a2, b2);
+      if (s2 > best) best = s2;
+    }
+
+    // 追加：片方が片方をほぼ含む場合（句読点差など）を高めにする
+    if (a.length >= 8 && b.length >= 8) {
+      if (a.indexOf(b) !== -1 || b.indexOf(a) !== -1) {
+        best = Math.max(best, 0.92);
+      }
+    }
+
+    // クランプ
+    if (best < 0) best = 0;
+    if (best > 1) best = 1;
+    return best;
   }
 
   // delete×N と insert×M を、できるだけ「似ている行同士」でペアにする
@@ -1444,7 +1649,8 @@ function buildRowsByLines(textA, textB) {
 
     if (item.type === 'equal') {
       // 同一行（空行も含む）
-      pushRow([{ type: 'equal', value: toPlainString(item.value) }], [{ type: 'equal', value: toPlainString(item.value) }]);
+      const eqV = _decodeLine(item.value);
+      pushRow([{ type: 'equal', value: toPlainString(eqV) }], [{ type: 'equal', value: toPlainString(eqV) }]);
       continue;
     }
 
@@ -1468,7 +1674,13 @@ function buildRowsByLines(textA, textB) {
         const aLine = p.a;
         const bLine = p.b;
 
-        // 片側のみ（削除/挿入）
+        
+      // 空行/空白行が両側にある場合は、replaceブロック内でも同じ行として揃える
+      if (aLine != null && bLine != null && _isBlankLine(aLine) && _isBlankLine(bLine)) {
+        pushRow([{ type: 'equal', value: toPlainString(aLine) }], [{ type: 'equal', value: toPlainString(bLine) }]);
+        continue;
+      }
+// 片側のみ（削除/挿入）
         if (aLine != null && bLine == null) {
           if (aLine === '') pushRow([{ type: 'newline-delete', value: '↵' }], [], { bEmpty: true });
           else pushRow([{ type: 'delete', value: aLine }], [], { bEmpty: true });
@@ -1506,7 +1718,152 @@ function buildRowsByLines(textA, textB) {
     i = j - 1;
   }
 
-  return rows;
+  return repairShiftedEqualLineRows(rows);
+}
+
+// 行比較で「同一行が空行差分を挟んでズレて表示される」ケースを補正
+function repairShiftedEqualLineRows(rows) {
+  function rowText(tokens) {
+    if (!tokens || !tokens.length) return '';
+    return tokens.map(t => t.value || '').join('');
+  }
+
+  function isNewlineOnlyRow(r) {
+    const aLen = r.a.tokens.length;
+    const bLen = r.b.tokens.length;
+    const aNewlineOnly = (aLen === 1 && r.a.tokens[0].type && String(r.a.tokens[0].type).startsWith('newline') && bLen === 0);
+    const bNewlineOnly = (bLen === 1 && r.b.tokens[0].type && String(r.b.tokens[0].type).startsWith('newline') && aLen === 0);
+    return aNewlineOnly || bNewlineOnly;
+  }
+
+  function isSpacerRow(r) {
+    if (isNewlineOnlyRow(r)) return true;
+    return rowText(r.a.tokens) === '' && rowText(r.b.tokens) === '';
+  }
+
+  function isSideOnly(r, side) {
+    const aEmpty = r.a.tokens.length === 0;
+    const bEmpty = r.b.tokens.length === 0;
+    if (side === 'a') return !aEmpty && bEmpty;
+    return !bEmpty && aEmpty;
+  }
+
+  function isEqualRow(r) {
+    if (!r || !r.a || !r.b) return false;
+    if (r.a.tokens.length === 0 || r.b.tokens.length === 0) return false;
+    return rowText(r.a.tokens) === rowText(r.b.tokens);
+  }
+
+  const out = rows.slice();
+
+  function allSpacersBetween(start, end) {
+    for (let k = start + 1; k < end; k++) {
+      if (!isSpacerRow(out[k])) return false;
+    }
+    return true;
+  }
+
+  function createNewlineRow(side) {
+    const row = { a: { tokens: [], isEmpty: true }, b: { tokens: [], isEmpty: true } };
+    if (side === 'a') {
+      row.a.tokens = [{ type: 'newline-delete', value: '↵' }];
+      row.a.isEmpty = false;
+    } else {
+      row.b.tokens = [{ type: 'newline-insert', value: '↵' }];
+      row.b.isEmpty = false;
+    }
+    return row;
+  }
+
+  // ★修正点：spacerが1個でも「両側↵」にしない。primarySide片側だけにする。
+  function markSpacersBetween(start, end, primarySide) {
+    const spacerIndices = [];
+    for (let k = start + 1; k < end; k++) {
+      if (isSpacerRow(out[k])) spacerIndices.push(k);
+    }
+    if (!spacerIndices.length) return;
+
+    for (const idx of spacerIndices) {
+      // 既に newline-only なら触らない
+      if (isNewlineOnlyRow(out[idx])) continue;
+      out[idx] = createNewlineRow(primarySide);
+    }
+  }
+
+  for (let i = 0; i < out.length; i++) {
+    const row = out[i];
+    if (!row || !row.a || !row.b) continue;
+
+    if (isSideOnly(row, 'a')) {
+      const aText = rowText(row.a.tokens);
+      if (!aText) continue;
+
+      let merged = false;
+
+      // 前方に同一equalがあれば、間のspacerをnewline化してこのrowを消す
+      for (let j = i - 1; j >= 0 && j >= i - 3; j--) {
+        if (!allSpacersBetween(j, i)) continue;
+        if (isEqualRow(out[j]) && rowText(out[j].a.tokens) === aText) {
+          markSpacersBetween(j, i, 'a');
+          out.splice(i, 1);
+          i--;
+          merged = true;
+          break;
+        }
+      }
+      if (merged) continue;
+
+      // 後方に反対側だけの同一行があれば、両側equal化して片方を消す
+      for (let j = i + 1; j < out.length && j <= i + 3; j++) {
+        const candidate = out[j];
+        if (!candidate) continue;
+        if (!allSpacersBetween(i, j)) continue;
+        if (isSideOnly(candidate, 'b') && rowText(candidate.b.tokens) === aText) {
+          row.a.tokens = [{ type: 'equal', value: aText }];
+          row.b.tokens = [{ type: 'equal', value: aText }];
+          row.a.isEmpty = false;
+          row.b.isEmpty = false;
+          markSpacersBetween(i, j, 'a');
+          out.splice(j, 1);
+          break;
+        }
+      }
+    } else if (isSideOnly(row, 'b')) {
+      const bText = rowText(row.b.tokens);
+      if (!bText) continue;
+
+      let merged = false;
+
+      for (let j = i - 1; j >= 0 && j >= i - 3; j--) {
+        if (!allSpacersBetween(j, i)) continue;
+        if (isEqualRow(out[j]) && rowText(out[j].b.tokens) === bText) {
+          markSpacersBetween(j, i, 'b');
+          out.splice(i, 1);
+          i--;
+          merged = true;
+          break;
+        }
+      }
+      if (merged) continue;
+
+      for (let j = i + 1; j < out.length && j <= i + 3; j++) {
+        const candidate = out[j];
+        if (!candidate) continue;
+        if (!allSpacersBetween(i, j)) continue;
+        if (isSideOnly(candidate, 'a') && rowText(candidate.a.tokens) === bText) {
+          row.a.tokens = [{ type: 'equal', value: bText }];
+          row.b.tokens = [{ type: 'equal', value: bText }];
+          row.a.isEmpty = false;
+          row.b.isEmpty = false;
+          markSpacersBetween(i, j, 'b');
+          out.splice(j, 1);
+          break;
+        }
+      }
+    }
+  }
+
+  return out;
 }
 
 
@@ -3297,7 +3654,7 @@ function test_chars_repair_does_not_split_it_will_by_newline_move() {
 
 
 function test_line_replace_block_alignment() {
-  _tLogStart("test_line_replace_block_alignment");
+  const t0 = _tLogStart("test_line_replace_block_alignment");
 
   const A =
 "    from: { row: 1, column: 1 },\n" +
@@ -3329,24 +3686,28 @@ function test_line_replace_block_alignment() {
   // - "delete:" 行は A/B 両方に存在するので、片側emptyにならない（置換行）
   // - "insert:" 行も同様
   // 旧バグでは delete 行が Aのみ、insert 行が Bのみ になりがち
-  const hasDeleteReplace = rows.some(r => !r.a.isEmpty && !r.b.isEmpty &&
-    _tTokenArray(r.a.tokens).some(t => t.value && t.value.includes("delete:")) &&
-    _tTokenArray(r.b.tokens).some(t => t.value && t.value.includes("delete:"))
-  );
-  const hasInsertReplace = rows.some(r => !r.a.isEmpty && !r.b.isEmpty &&
-    _tTokenArray(r.a.tokens).some(t => t.value && t.value.includes("insert:")) &&
-    _tTokenArray(r.b.tokens).some(t => t.value && t.value.includes("insert:"))
-  );
+  const hasDeleteReplace = rows.some(r => {
+    if (r.a.isEmpty || r.b.isEmpty) return false;
+    const aText = _tTokenArray(r.a.tokens).map(t => t.value || '').join('');
+    const bText = _tTokenArray(r.b.tokens).map(t => t.value || '').join('');
+    return aText.includes("delete:") && bText.includes("delete:");
+  });
+  const hasInsertReplace = rows.some(r => {
+    if (r.a.isEmpty || r.b.isEmpty) return false;
+    const aText = _tTokenArray(r.a.tokens).map(t => t.value || '').join('');
+    const bText = _tTokenArray(r.b.tokens).map(t => t.value || '').join('');
+    return aText.includes("insert:") && bText.includes("insert:");
+  });
 
   _tAssert(hasDeleteReplace, '[TEST] Expected "delete:" line to be aligned as a replace-row (both sides non-empty)');
   _tAssert(hasInsertReplace, '[TEST] Expected "insert:" line to be aligned as a replace-row (both sides non-empty)');
 
-  _tLogOk("test_line_replace_block_alignment");
+  _tLogEnd(t0);
 }
 
 
 function test_hybrid_align_shifted_similar_lines() {
-  _tLogTestStart("Hybrid: align shifted similar lines (But a bit...)");
+  const t0 = _tLogStart("Hybrid: align shifted similar lines (But a bit...)");
 
   const A = [
     "If I put it in my batter,",
@@ -3362,18 +3723,23 @@ function test_hybrid_align_shifted_similar_lines() {
     "That will make my batter better."
   ].join("\n");
 
-  const rows = computeHybridRows(A, B);
+  const result = computeHybridRows(A, B);
+  const rows = result.rows || [];
 
   // Expect to find a row where BOTH sides contain "But a bit of better butter"
   let ok = false;
   for (const r of rows) {
-    const a = (r.a && r.a.rawLine != null) ? String(r.a.rawLine) : tokensToPlainText(r.a.tokens || []);
-    const b = (r.b && r.b.rawLine != null) ? String(r.b.rawLine) : tokensToPlainText(r.b.tokens || []);
+    const a = (r.a && r.a.rawLine != null)
+      ? String(r.a.rawLine)
+      : _tTokenArray(r.a.tokens).map(t => t.value || '').join('');
+    const b = (r.b && r.b.rawLine != null)
+      ? String(r.b.rawLine)
+      : _tTokenArray(r.b.tokens).map(t => t.value || '').join('');
     if (a.includes("But a bit of better butter") && b.includes("But a bit of better butter")) { ok = true; break; }
   }
   _tAssert(ok, '[TEST] Expected "But a bit of better butter" to align in the same row (A and B).');
 
-  _tLogTestPass("Hybrid: align shifted similar lines (But a bit...)");
+  _tLogEnd(t0);
 }
 
 
@@ -3503,4 +3869,4 @@ window.runAllTests = runAllTests;
 
 </script>
 </body>
-</html>  test_no_object_object_in_line_and_hybrid();
+</html>
