@@ -2057,6 +2057,10 @@ function repairMidlineNewlineRows(rows) {
     return !!text && (text[0] === ' ' || text[0] === '\t');
   }
 
+  function startsWithPunctuation(text) {
+    return !!text && /^[\s]*[,.、。．;:!?]/.test(text);
+  }
+
   const out = [];
   for (let i = 0; i < rows.length; i++) {
     if (i + 2 < rows.length && isNewlineOnlyRow(rows[i + 1])) {
@@ -2070,7 +2074,7 @@ function repairMidlineNewlineRows(rows) {
         if (rows[i][other].tokens.length !== 0) continue;
 
         const contText = rowTextNoNewline(rows[i + 2], side);
-        if (!contText || !startsWithSpace(contText)) continue;
+        if (!contText || !(startsWithSpace(contText) || startsWithPunctuation(contText))) continue;
 
         const leadText = rowTextNoNewline(rows[i], side);
         if (!leadText) continue;
@@ -3802,6 +3806,33 @@ function test_chars_repair_does_not_split_that_will() {
   _tAssert(!split, "Chars diff should not split 'That will make my batter better.' across rows");
 }
 
+function test_chars_repair_merges_trailing_punctuation() {
+  const A = [
+    "But a bit of better butter,",
+    "That will make my batter better."
+  ].join("\n");
+
+  const B = [
+    "But a bit of better butter",
+    "",
+    "Will make my batter better."
+  ].join("\n");
+
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  let rows = renderDiff(diff);
+  rows = repairMidlineNewlineRows(rows);
+
+  let hasPunctRow = false;
+  for (const r of rows) {
+    const aText = r.a.tokens.map(t => t.value).join('');
+    if (aText.trim() === ',' || aText.trim() === ',') {
+      hasPunctRow = true;
+      break;
+    }
+  }
+  _tAssert(!hasPunctRow, "Chars diff should not isolate trailing punctuation on its own row");
+}
+
 
 function test_line_replace_block_alignment() {
   const t0 = _tLogStart("test_line_replace_block_alignment");
@@ -3971,7 +4002,8 @@ function runAllTests() {
     test_hybrid_returns_rows_and_scores,
     test_scoreRows_penalizes_newline_only_more_than_empty_side,
     test_chars_repair_does_not_split_it_will_by_newline_move,
-    test_chars_repair_does_not_split_that_will
+    test_chars_repair_does_not_split_that_will,
+    test_chars_repair_merges_trailing_punctuation
   ];
 
   const started = performance.now();
