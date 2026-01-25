@@ -2059,37 +2059,51 @@ function repairMidlineNewlineRows(rows) {
 
   const out = [];
   for (let i = 0; i < rows.length; i++) {
-    const leadSide = (i + 2 < rows.length) ? singleSideRow(rows[i]) : null;
-    if (leadSide && isNewlineOnlyRow(rows[i + 1])) {
-      const contSide = singleSideRow(rows[i + 2]);
-      if (contSide === leadSide) {
-        const leadText = rowTextNoNewline(rows[i], leadSide);
-        const contText = rowTextNoNewline(rows[i + 2], contSide);
-        if (leadText && contText && startsWithSpace(contText)) {
-          const leadRow = rows[i];
-          const nlRow = rows[i + 1];
-          const contRow = rows[i + 2];
+    if (i + 2 < rows.length && isNewlineOnlyRow(rows[i + 1])) {
+      let mergedRow = null;
+      let matched = false;
 
-          // 1) まず改行差分行を先に出す（＝本来の行境界として扱う）
-          out.push(nlRow);
+      for (const side of ['a', 'b']) {
+        const other = side === 'a' ? 'b' : 'a';
+        const leadSide = singleSideRow(rows[i]);
+        if (leadSide !== side) continue;
+        if (rows[i][other].tokens.length !== 0) continue;
 
-          // 2) 先行行 + 続き行 を統合
-          const merged = {
-            a: { tokens: [], isEmpty: false },
-            b: { tokens: [], isEmpty: false }
-          };
+        const contText = rowTextNoNewline(rows[i + 2], side);
+        if (!contText || !startsWithSpace(contText)) continue;
 
-          merged.a.tokens = (leadRow.a.tokens.length ? leadRow.a.tokens.slice() : []).concat(contRow.a.tokens.length ? contRow.a.tokens.slice() : []);
-          merged.b.tokens = (leadRow.b.tokens.length ? leadRow.b.tokens.slice() : []).concat(contRow.b.tokens.length ? contRow.b.tokens.slice() : []);
+        const leadText = rowTextNoNewline(rows[i], side);
+        if (!leadText) continue;
 
-          merged.a.isEmpty = merged.a.tokens.length === 0;
-          merged.b.isEmpty = merged.b.tokens.length === 0;
+        const leadRow = rows[i];
+        const nlRow = rows[i + 1];
+        const contRow = rows[i + 2];
 
-          out.push(merged);
+        mergedRow = {
+          a: { tokens: [], isEmpty: false },
+          b: { tokens: [], isEmpty: false }
+        };
 
-          i += 2;
-          continue;
-        }
+        mergedRow.a.tokens = side === 'a'
+          ? (leadRow.a.tokens.length ? leadRow.a.tokens.slice() : []).concat(contRow.a.tokens.length ? contRow.a.tokens.slice() : [])
+          : (contRow.a.tokens.length ? contRow.a.tokens.slice() : []);
+        mergedRow.b.tokens = side === 'b'
+          ? (leadRow.b.tokens.length ? leadRow.b.tokens.slice() : []).concat(contRow.b.tokens.length ? contRow.b.tokens.slice() : [])
+          : (contRow.b.tokens.length ? contRow.b.tokens.slice() : []);
+
+        mergedRow.a.isEmpty = mergedRow.a.tokens.length === 0;
+        mergedRow.b.isEmpty = mergedRow.b.tokens.length === 0;
+
+        out.push(nlRow);
+        out.push(mergedRow);
+
+        matched = true;
+        break;
+      }
+
+      if (matched) {
+        i += 2;
+        continue;
       }
     }
 
