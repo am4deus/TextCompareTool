@@ -667,11 +667,6 @@ body.result-only-mode .results-section {
   border-bottom: none;
 }
 
-/* BLANK行（内部処理用マーカー）を非表示 */
-.diff-table tr.blank-row {
-  display: none;
-}
-
 .diff-table td:nth-child(2),
 .diff-table td:nth-child(3) {
   width: 50%;
@@ -1899,9 +1894,9 @@ function buildRowsByLinesWorker(textA, textB, progressFn) {
     let j = i;
     while (j < lineDiff.length && (lineDiff[j].type === 'delete' || lineDiff[j].type === 'insert')) {
       if (lineDiff[j].type === 'delete') {
-        if (lineDiff[j].value !== '\\n') delBlock.push(lineDiff[j].value);
+        if (lineDiff[j].value !== '\\n') delBlock.push(_decodeLine(lineDiff[j].value));
       } else if (lineDiff[j].type === 'insert') {
-        if (lineDiff[j].value !== '\\n') insBlock.push(lineDiff[j].value);
+        if (lineDiff[j].value !== '\\n') insBlock.push(_decodeLine(lineDiff[j].value));
       }
       j++;
     }
@@ -2518,7 +2513,13 @@ function tokenValueToString(value, _depth = 0) {
   if (_depth > 6) return '';
   if (value === null || value === undefined) return '';
   const t = typeof value;
-  if (t === 'string') return value;
+  if (t === 'string') {
+    // BLANKマーカーは空文字に変換（内部処理用なので表示しない）
+    if (/^(?:\uE000|\u0000)?BLANK:[AB]:\d+$/.test(value)) return '';
+    // 部分一致の場合も除去
+    if (/BLANK:[AB]:\d+/.test(value)) return value.replace(/(?:\uE000|\u0000)?BLANK:[AB]:\d+/g, '');
+    return value;
+  }
   if (t === 'number' || t === 'boolean' || t === 'bigint') return String(value);
 
   // 配列（例: トークン配列 / 文字列配列 / オブジェクト配列）
@@ -2849,9 +2850,9 @@ function buildRowsByLines(textA, textB) {
     let j = i;
     while (j < lineDiff.length && (lineDiff[j].type === 'delete' || lineDiff[j].type === 'insert')) {
       if (lineDiff[j].type === 'delete') {
-        if (lineDiff[j].value !== '\n') delBlock.push(toPlainString(lineDiff[j].value));
+        if (lineDiff[j].value !== '\n') delBlock.push(toPlainString(_decodeLine(lineDiff[j].value)));
       } else if (lineDiff[j].type === 'insert') {
-        if (lineDiff[j].value !== '\n') insBlock.push(toPlainString(lineDiff[j].value));
+        if (lineDiff[j].value !== '\n') insBlock.push(toPlainString(_decodeLine(lineDiff[j].value)));
       }
       j++;
     }
@@ -3715,7 +3716,7 @@ function updateLocationPane() {
   const barB = document.getElementById('diffLocationBarB');
   if (!barA || !barB) return;
 
-  const rowsAll = Array.from(document.querySelectorAll('#diffBody tr')).filter(row => !row.classList.contains('stats-row') && !row.classList.contains('blank-row'));
+  const rowsAll = Array.from(document.querySelectorAll('#diffBody tr')).filter(row => !row.classList.contains('stats-row'));
   totalRowCount = rowsAll.length;
   diffRowElements = rowsAll.filter(row => row.classList.contains('diff-row'));
   diffMarkersA = [];
@@ -3802,7 +3803,7 @@ function updateLocationPane() {
     if (!container || totalRowCount === 0) return;
     
     const allRows = Array.from(document.querySelectorAll('#diffBody tr')).filter(
-      row => !row.classList.contains('stats-row') && !row.classList.contains('blank-row')
+      row => !row.classList.contains('stats-row')
     );
     
     // 対象の行を見つける
@@ -3911,13 +3912,6 @@ function renderComparisonRows(rows, textA, textB, hasDiff) {
     for (const row of rows) {
       const tr = document.createElement('tr');
       tr.dataset.rowIndex = String(lineNum - 1);
-
-      // BLANK行（内部マーカー）を検出して非表示にする
-      const aText = row.a.tokens.map(t => t.value || '').join('');
-      const bText = row.b.tokens.map(t => t.value || '').join('');
-      if (/^[\uE000\u0000]?BLANK:[AB]:\d+$/.test(aText) || /^[\uE000\u0000]?BLANK:[AB]:\d+$/.test(bText)) {
-        tr.classList.add('blank-row');
-      }
 
       // 差分がない行はクラス付与（差分のみ表示で非表示にする）
       const rowHasDiff = _tTokenArray(row.a.tokens).some(t => t.type === 'delete' || (t.type && t.type.startsWith('newline'))) ||
@@ -4754,7 +4748,7 @@ async function downloadExcel() {
 
   
   // ヘッダー行
-  const headerRow = ws.addRow(['No', 'テキスト A（差分␣/↵表示）', 'テキスト B（差分␣/↵表示）', '一致', 'テキスト A（原文）', 'テキスト B（原文）']);
+  const headerRow = ws.addRow(['一致', 'No', 'テキスト A（差分␣/↵表示）', 'テキスト B（差分␣/↵表示）', 'テキスト A（原文）', 'テキスト B（原文）']);
   headerRow.eachCell(cell => {
     cell.font = { name: 'ＭＳ ゴシック', bold: true };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
@@ -4776,20 +4770,13 @@ async function downloadExcel() {
   // 比較結果を追加
   let rowNum = 0;
   lastDiffRows.forEach((row, index) => {
-    // BLANK行（内部マーカー）はスキップ
-    const aText = row.a.tokens.map(t => t.value || '').join('');
-    const bText = row.b.tokens.map(t => t.value || '').join('');
-    if (/^[\uE000\u0000]?BLANK:[AB]:\d+$/.test(aText) || /^[\uE000\u0000]?BLANK:[AB]:\d+$/.test(bText)) {
-      return; // この行をスキップ
-    }
-    
     rowNum++;
     
     // 差分があるかチェック
     const hasDiff = _tTokenArray(row.a.tokens).some(t => t.type === 'delete' || t.type.startsWith('newline')) ||
                     _tTokenArray(row.b.tokens).some(t => t.type === 'insert' || t.type.startsWith('newline'));
     
-    const excelRow = ws.addRow([rowNum, '', '', !hasDiff, '', '']);    
+    const excelRow = ws.addRow([!hasDiff, rowNum, '', '', '', '']);    
     // 改行差分行（↵だけの行）は、UIのグレーアウトをExcelにも反映
     // ※ 行全体ではなく、UIで empty-cell になっている「空側」だけをグレーアウトする
     const aLen = row.a.tokens.length;
@@ -4800,16 +4787,16 @@ async function downloadExcel() {
     if (aIsNewlineOnly || bIsNewlineOnly) {
       const grayFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFA6A6A6' } };
 
-      // 列: 1 No / 2 DiffA / 3 DiffB / 4 Match / 5 RawA / 6 RawB
+      // 列: 1 Match / 2 No / 3 DiffA / 4 DiffB / 5 RawA / 6 RawB
       // Aに↵があってBが空 => B側(DiffB, RawB)をグレー
       if (aIsNewlineOnly) {
-        excelRow.getCell(3).fill = grayFill; // DiffB
+        excelRow.getCell(4).fill = grayFill; // DiffB
         excelRow.getCell(6).fill = grayFill; // RawB
       }
 
       // Bに↵があってAが空 => A側(DiffA, RawA)をグレー
       if (bIsNewlineOnly) {
-        excelRow.getCell(2).fill = grayFill; // DiffA
+        excelRow.getCell(3).fill = grayFill; // DiffA
         excelRow.getCell(5).fill = grayFill; // RawA
       }
     }
@@ -4821,28 +4808,33 @@ async function downloadExcel() {
       const aEmpty = row.a.tokens.length === 0;
       const bEmpty = row.b.tokens.length === 0;
 
-      // 列: 2 DiffA / 3 DiffB / 5 RawA / 6 RawB
+      // 列: 1 Match / 2 No / 3 DiffA / 4 DiffB / 5 RawA / 6 RawB
       if (aEmpty && !bEmpty) {
-        excelRow.getCell(2).fill = grayFill2; // DiffA
+        excelRow.getCell(3).fill = grayFill2; // DiffA
         excelRow.getCell(5).fill = grayFill2; // RawA
       }
       if (bEmpty && !aEmpty) {
-        excelRow.getCell(3).fill = grayFill2; // DiffB
+        excelRow.getCell(4).fill = grayFill2; // DiffB
         excelRow.getCell(6).fill = grayFill2; // RawB
       }
     }
 
+    // 一致列の書式
+    const matchCell = excelRow.getCell(1);
+    matchCell.alignment = { horizontal: 'center' };
+    matchCell.font = { name: 'ＭＳ ゴシック' };
+
     // No列の書式
-    const noCell = excelRow.getCell(1);
+    const noCell = excelRow.getCell(2);
     noCell.alignment = { horizontal: 'center' };
     noCell.font = { name: 'ＭＳ ゴシック' };
     
     // A列
-    const cellA = excelRow.getCell(2);
+    const cellA = excelRow.getCell(3);
     applyRichText(cellA, row.a.tokens, colors);
     
     // B列
-    const cellB = excelRow.getCell(3);
+    const cellB = excelRow.getCell(4);
     applyRichText(cellB, row.b.tokens, colors);
 
     // 原文列（差分装飾なし）
@@ -4858,11 +4850,6 @@ async function downloadExcel() {
     const monoFont = { name: 'ＭＳ ゴシック' };
     cellRawA.font = monoFont;
     cellRawB.font = monoFont;
-    
-    // 一致判定列の書式
-    const matchCell = excelRow.getCell(4);
-    matchCell.alignment = { horizontal: 'center' };
-    matchCell.font = { name: 'ＭＳ ゴシック' };
     
     excelRow.alignment = { wrapText: true, vertical: 'top' };
   });
@@ -4932,16 +4919,17 @@ async function downloadExcel() {
   }
   
   // 各列の幅を自動調整（テキスト列は最大幅を大きめに）
-  autoFitColumn(ws, 1, 6, 12);    // No列
-  autoFitColumn(ws, 2, 30, 250);  // テキストA（差分）
-  autoFitColumn(ws, 3, 30, 250);  // テキストB（差分）
-  autoFitColumn(ws, 4, 8, 14);    // 一致判定
+  // 列: 1 Match / 2 No / 3 DiffA / 4 DiffB / 5 RawA / 6 RawB
+  autoFitColumn(ws, 1, 8, 14);    // 一致判定
+  autoFitColumn(ws, 2, 6, 12);    // No列
+  autoFitColumn(ws, 3, 30, 250);  // テキストA（差分）
+  autoFitColumn(ws, 4, 30, 250);  // テキストB（差分）
   
-  // E,F列（原文）はB,C列（差分）と同じ幅にする
-  const widthB = ws.getColumn(2).width;
+  // E,F列（原文）はC,D列（差分）と同じ幅にする
   const widthC = ws.getColumn(3).width;
-  ws.getColumn(5).width = widthB;  // テキストA（原文）= テキストA（差分）と同じ
-  ws.getColumn(6).width = widthC;  // テキストB（原文）= テキストB（差分）と同じ
+  const widthD = ws.getColumn(4).width;
+  ws.getColumn(5).width = widthC;  // テキストA（原文）= テキストA（差分）と同じ
+  ws.getColumn(6).width = widthD;  // テキストB（原文）= テキストB（差分）と同じ
   
   // 統計列の幅を自動調整
   autoFitColumn(ws, statsStartCol, 18, 30);
