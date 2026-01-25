@@ -3548,6 +3548,9 @@ function setCurrentDiffIndex(index, options = { scroll: true }) {
   if (row) {
     row.classList.add('current-diff-row');
     if (options.scroll) {
+      if (row.id) {
+        history.replaceState(null, '', `#${row.id}`);
+      }
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }
@@ -3672,6 +3675,7 @@ function renderComparisonRows(rows, textA, textB, hasDiff) {
       } else {
         tr.classList.add('diff-row');
         tr.dataset.lineNum = String(lineNum);
+        tr.id = `diff-row-${lineNum}`;
         // 差分カウント
         deleteCount += row.a.tokens.filter(t => t.type === 'delete').length;
         insertCount += row.b.tokens.filter(t => t.type === 'insert').length;
