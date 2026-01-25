@@ -2104,7 +2104,7 @@ function hiraganaToRomaji(str) {
     'ば': 'ba', 'び': 'bi', 'ぶ': 'bu', 'べ': 'be', 'ぼ': 'bo',
     'ぱ': 'pa', 'ぴ': 'pi', 'ぷ': 'pu', 'ぺ': 'pe', 'ぽ': 'po',
     'ぁ': 'a', 'ぃ': 'i', 'ぅ': 'u', 'ぇ': 'e', 'ぉ': 'o',
-    'ゃ': 'ya', 'ゅ': 'yu', 'ょ': 'yo', 'っ': ''
+    'ゃ': 'ya', 'ゅ': 'yu', 'ょ': 'yo'
   };
   const keys = Object.keys(hiraMap).sort((a, b) => b.length - a.length);
   for (const hira of keys) {
@@ -3726,6 +3726,18 @@ async function executeCount(input) {
     customCaseSensitive: document.getElementById('count-custom-case').checked
   };
 
+  if (window.__syncTestMode) {
+    const result = syncHandlers
+      ? syncHandlers['execute-main']({ tool: 'count', input, options })
+      : null;
+    if (result && result.stats) {
+      renderCountResults(result.stats);
+      renderCustomCountResult(options.customQuery, result.customCount ?? 0);
+      applyOutput(result.output || '');
+      return result.output || '';
+    }
+  }
+
   try {
     const result = await runWorkerTask('execute-main', { tool: 'count', input, options });
     if (result.stats) {
@@ -4076,6 +4088,11 @@ async function executeCombination(input) {
   if (!comboData) {
     return '';
   }
+  if (window.__syncTestMode && syncHandlers) {
+    const result = syncHandlers['execute-main']({ tool: 'combination', input, options: comboData });
+    applyOutput(result.output || '');
+    return result.output || '';
+  }
   try {
     const result = await runWorkerTask('execute-main', { tool: 'combination', input, options: comboData });
     applyOutput(result.output || '');
@@ -4103,6 +4120,12 @@ function executeRemoveSpaces(input) {
     mode: document.querySelector('input[name="spaces-remove-mode"]:checked').value
   };
 
+  if (window.__syncTestMode && syncHandlers) {
+    const result = syncHandlers['execute-main']({ tool: 'remove-spaces', input, options });
+    applyOutput(result.output || '');
+    return result.output || '';
+  }
+
   return runWorkerTask('execute-main', { tool: 'remove-spaces', input, options })
     .then(result => {
       applyOutput(result.output || '');
@@ -4123,6 +4146,12 @@ function executeAddSpacesMain(input) {
     char: document.getElementById('spaces-after-char').value,
     n: parseInt(document.getElementById('spaces-add-n').value) || 10
   };
+
+  if (window.__syncTestMode && syncHandlers) {
+    const result = syncHandlers['execute-main']({ tool: 'add-spaces', input, options });
+    applyOutput(result.output || '');
+    return result.output || '';
+  }
 
   return runWorkerTask('execute-main', { tool: 'add-spaces', input, options })
     .then(result => {
