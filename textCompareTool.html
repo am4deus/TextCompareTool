@@ -1002,9 +1002,8 @@ footer a:hover {
   <div class="actions">
     <div class="compare-method-group">
       <select id="compareMethod" class="compare-method-select">
-        <option value="hybrid" selected>ハイブリッド比較</option>
+        <option value="compare" selected>比較</option>
         <option value="line">行比較</option>
-        <option value="chars">文字比較</option>
         <option value="charsLegacy">文字比較（レガシー）</option>
       </select>
       <button class="btn-primary" onclick="compare()">比較する (Ctrl+Enter)</button>
@@ -1895,15 +1894,14 @@ self.onmessage = function(e) {
       case 'line':
         rows = compareLineWorker(textA, textB, progressFn);
         break;
-      case 'chars':
-        rows = compareCharsWorker(textA, textB, progressFn);
-        break;
       case 'charsLegacy':
         rows = compareCharsLegacyWorker(textA, textB, progressFn);
         break;
+      case 'compare':
       case 'hybrid':
+      case 'chars':
       default:
-        rows = buildRowsByLinesWorker(textA, textB, progressFn);
+        rows = compareCharsWorker(textA, textB, progressFn);
         break;
     }
     
@@ -3560,10 +3558,10 @@ function compare() {
       `処理に非常に時間がかかる場合があります。`,
       [
         {
-          text: '文字比較に切替',
+          text: '比較に切替',
           primary: true,
           action: () => {
-            document.getElementById('compareMethod').value = 'chars';
+            document.getElementById('compareMethod').value = 'compare';
             compare();
           }
         },
@@ -3596,16 +3594,15 @@ function compare() {
     case 'line':
       rows = _normalizeRowsTokens(buildRowsForLineCompare(textA, textB));
       break;
-    case 'chars':
-      rows = _normalizeRowsTokens(buildRowsByLines(textA, textB));
-      break;
     case 'charsLegacy':
       const tokensA = tokenize(textA);
       const tokensB = tokenize(textB);
       const diff = generateDiff(tokensA, tokensB);
       rows = renderDiffLegacy(diff);
       break;
+    case 'compare':
     case 'hybrid':
+    case 'chars':
     default:
       const result = computeHybridRows(textA, textB);
       rows = _normalizeRowsTokens(result.rows);
@@ -3710,7 +3707,7 @@ function executeCompareWithWorker(textA, textB, method) {
 
 // 旧関数（互換性のため残す）
 function compareChars() {
-  document.getElementById('compareMethod').value = 'chars';
+  document.getElementById('compareMethod').value = 'compare';
   compare();
 }
 
@@ -3888,7 +3885,7 @@ function computeHybridRows(textA, textB) {
 
 // 旧関数（互換性のため残す）
 function compareHybrid() {
-  document.getElementById('compareMethod').value = 'hybrid';
+  document.getElementById('compareMethod').value = 'compare';
   compare();
 }
 
