@@ -2546,12 +2546,9 @@ function compareChars() {
   textA = textA.replace(/\r\n?/g, '\n');
   textB = textB.replace(/\r\n?/g, '\n');
 
-  const tokensA = tokenize(textA);
-  const tokensB = tokenize(textB);
-  const diff = generateDiff(tokensA, tokensB);
-  let rows = _normalizeRowsTokens(renderDiff(diff));
-  rows = repairMidlineNewlineRows(rows);
-  rows = enforceOriginalLineBoundaries(rows, textA, textB);
+  // 文字比較でも「元の行境界は保持」する
+  // 行単位で整列し、行内のみ文字差分を出す
+  const rows = _normalizeRowsTokens(buildRowsByLines(textA, textB));
   // 差分があるか（行単位の表示でも判定は rows で十分）
   const hasDiff = rows.some(r => _tTokenArray(r.a.tokens).some(t => t.type !== 'equal') || _tTokenArray(r.b.tokens).some(t => t.type !== 'equal'));
 
@@ -3993,10 +3990,7 @@ function test_chars_respects_original_lines_in_sample2() {
     "CAAAAAAAAAAAAAA     D9*************** AAAAAAA32"
   ].join("\n");
 
-  const diff = generateDiff(tokenize(A), tokenize(B));
-  let rows = renderDiff(diff);
-  rows = repairMidlineNewlineRows(rows);
-  rows = enforceOriginalLineBoundaries(rows, A, B);
+  const rows = buildRowsByLines(A, B);
 
   const aLines = splitLinesKeepEmpty(A);
   const bLines = splitLinesKeepEmpty(B);
