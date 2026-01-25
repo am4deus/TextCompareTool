@@ -3426,38 +3426,30 @@ document.querySelectorAll('.tool-tab').forEach(tab => {
     const swapButton = document.getElementById('swapButton');
     const executeButton = document.getElementById('executeButton');
     
+    // デフォルト状態にリセット（タブ遷移の残りを防ぐ）
+    inputPanel.style.display = 'block';
+    outputPanel.style.display = 'block';
+    mainContent.classList.remove('full-width');
+    swapButton.style.display = 'inline-block';
+    executeButton.style.display = 'inline-block';
+    const columnResults = document.getElementById('column-results');
+    if (columnResults) columnResults.style.display = 'none';
+
     // 組み合わせ生成: 入力パネル非表示、出力全幅、入出力入替非表示
     if (currentTool === 'combination') {
       inputPanel.style.display = 'none';
-      outputPanel.style.display = 'block';
       mainContent.classList.add('full-width');
       swapButton.style.display = 'none';
-      executeButton.style.display = 'inline-block';
     } 
     // 列抽出: 出力パネル非表示（専用の結果エリアを使用）
     else if (currentTool === 'column-extract') {
-      inputPanel.style.display = 'block';
       outputPanel.style.display = 'none';
-      mainContent.classList.remove('full-width');
       swapButton.style.display = 'none';
       executeButton.style.display = 'none';
-      document.getElementById('column-results').style.display = 'none';
     }
     // 改行追加/削除、文字変換、行操作: 各セクションにボタンがあるので実行ボタン非表示
     else if (currentTool === 'line-breaks' || currentTool === 'convert' || currentTool === 'line-ops') {
-      inputPanel.style.display = 'block';
-      outputPanel.style.display = 'block';
-      mainContent.classList.remove('full-width');
-      swapButton.style.display = 'inline-block';
       executeButton.style.display = 'none';
-    }
-    // その他: 通常表示
-    else {
-      inputPanel.style.display = 'block';
-      outputPanel.style.display = 'block';
-      mainContent.classList.remove('full-width');
-      swapButton.style.display = 'inline-block';
-      executeButton.style.display = 'inline-block';
     }
   });
 });
