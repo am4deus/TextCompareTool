@@ -3995,14 +3995,33 @@ function test_chars_respects_original_lines_in_sample2() {
   const aLines = splitLinesKeepEmpty(A);
   const bLines = splitLinesKeepEmpty(B);
 
-  for (const line of aLines) {
-    const hits = rows.filter(r => r.a.tokens.map(t => t.value).join('') === line);
-    _tAssert(hits.length <= 1, 'A-side line should not be split across multiple rows');
+  function assertLinesReconstructed(rowsSide, lines, label) {
+    const seen = [];
+    for (const row of rowsSide) {
+      const text = row.tokens.map(t => t.value).join('');
+      if (text === '' && row.tokens.length === 0) {
+        seen.push('');
+        continue;
+      }
+      if (text === '' && row.tokens.length !== 0) {
+        seen.push('');
+        continue;
+      }
+      seen.push(text);
+    }
+
+    let idx = 0;
+    for (const line of lines) {
+      _tAssert(idx < seen.length, `${label}: missing line "${line}"`);
+      _tEq(seen[idx], line, `${label}: line mismatch at ${idx + 1}`);
+      idx++;
+    }
   }
-  for (const line of bLines) {
-    const hits = rows.filter(r => r.b.tokens.map(t => t.value).join('') === line);
-    _tAssert(hits.length <= 1, 'B-side line should not be split across multiple rows');
-  }
+
+  const rowsA = rows.map(r => r.a);
+  const rowsB = rows.map(r => r.b);
+  assertLinesReconstructed(rowsA, aLines, 'A-side');
+  assertLinesReconstructed(rowsB, bLines, 'B-side');
 }
 
 
