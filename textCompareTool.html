@@ -2144,6 +2144,100 @@ function repairMidlineNewlineRows(rows) {
   return out;
 }
 
+// 文字比較の行分割で「元の1行が複数行に割れる」ことを防ぐために、
+// 元テキストの行境界に合わせて行を再結合する。
+function enforceOriginalLineBoundaries(rows, textA, textB) {
+  const linesA = splitLinesKeepEmpty(textA);
+  const linesB = splitLinesKeepEmpty(textB);
+
+  function tokensText(tokens) {
+    let s = '';
+    for (const t of tokens) s += (t && t.value) ? t.value : '';
+    return s;
+  }
+
+  function isNewlineOnlyRow(r) {
+    const aLen = r.a.tokens.length;
+    const bLen = r.b.tokens.length;
+    const aNewlineOnly = (aLen === 1 && r.a.tokens[0].type && String(r.a.tokens[0].type).startsWith('newline') && bLen === 0);
+    const bNewlineOnly = (bLen === 1 && r.b.tokens[0].type && String(r.b.tokens[0].type).startsWith('newline') && aLen === 0);
+    return { aNewlineOnly, bNewlineOnly, isNewlineOnly: aNewlineOnly || bNewlineOnly };
+  }
+
+  const out = [];
+  let accA = '';
+  let accB = '';
+  let curA = [];
+  let curB = [];
+  let aIdx = 0;
+  let bIdx = 0;
+  let pendingNewlines = [];
+
+  function flushCurrent() {
+    if (curA.length || curB.length) {
+      out.push({
+        a: { tokens: curA, isEmpty: curA.length === 0 },
+        b: { tokens: curB, isEmpty: curB.length === 0 }
+      });
+      curA = [];
+      curB = [];
+      accA = '';
+      accB = '';
+    }
+  }
+
+  function drainPending() {
+    if (!pendingNewlines.length) return;
+    for (const row of pendingNewlines) out.push(row);
+    pendingNewlines = [];
+  }
+
+  for (const row of rows) {
+    const { isNewlineOnly } = isNewlineOnlyRow(row);
+
+    if (isNewlineOnly) {
+      if (!accA && !accB && curA.length === 0 && curB.length === 0) {
+        out.push(row);
+      } else {
+        pendingNewlines.push(row);
+      }
+      continue;
+    }
+
+    if (row.a.tokens.length === 0 && row.b.tokens.length === 0) {
+      if (!accA && !accB && curA.length === 0 && curB.length === 0) {
+        out.push(row);
+        if (aIdx < linesA.length) aIdx++;
+        if (bIdx < linesB.length) bIdx++;
+        continue;
+      }
+    }
+
+    curA = curA.concat(row.a.tokens);
+    curB = curB.concat(row.b.tokens);
+    accA += tokensText(row.a.tokens);
+    accB += tokensText(row.b.tokens);
+
+    const targetA = (aIdx < linesA.length) ? linesA[aIdx] : null;
+    const targetB = (bIdx < linesB.length) ? linesB[bIdx] : null;
+
+    const doneA = targetA != null ? accA === targetA : true;
+    const doneB = targetB != null ? accB === targetB : true;
+
+    if (doneA && doneB) {
+      flushCurrent();
+      aIdx++;
+      bIdx++;
+      drainPending();
+    }
+  }
+
+  flushCurrent();
+  drainPending();
+
+  return out;
+}
+
 
 
 
@@ -2457,6 +2551,7 @@ function compareChars() {
   const diff = generateDiff(tokensA, tokensB);
   let rows = _normalizeRowsTokens(renderDiff(diff));
   rows = repairMidlineNewlineRows(rows);
+  rows = enforceOriginalLineBoundaries(rows, textA, textB);
   // 差分があるか（行単位の表示でも判定は rows で十分）
   const hasDiff = rows.some(r => _tTokenArray(r.a.tokens).some(t => t.type !== 'equal') || _tTokenArray(r.b.tokens).some(t => t.type !== 'equal'));
 
@@ -2560,6 +2655,7 @@ function computeHybridRows(textA, textB) {
   const diffChars = generateDiff(tokenize(textA), tokenize(textB));
   let rowsChars = renderDiff(diffChars);
   rowsChars = repairMidlineNewlineRows(rowsChars);
+  rowsChars = enforceOriginalLineBoundaries(rowsChars, textA, textB);
 
   function rowSideContent(row, side) {
     if (!row || !row[side] || !Array.isArray(row[side].tokens)) return null;
@@ -3881,6 +3977,40 @@ function test_chars_repair_merges_punctuation_after_equal_row() {
   _tAssert(!hasCommaRow, "Chars diff should not split ',' into its own row after equal-line merge");
 }
 
+function test_chars_respects_original_lines_in_sample2() {
+  const A = [
+    "AAAAAAAAAAAAAAA     B9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     A9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     B9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     C9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     D9*************** AAAAAAA32"
+  ].join("\n");
+
+  const B = [
+    "AAAAAAAAAAAAAAA     B9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     B9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     C9*************** AAAAAAA32",
+    "CAAAAAAAAAAAAAA     D9*************** AAAAAAA32"
+  ].join("\n");
+
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  let rows = renderDiff(diff);
+  rows = repairMidlineNewlineRows(rows);
+  rows = enforceOriginalLineBoundaries(rows, A, B);
+
+  const aLines = splitLinesKeepEmpty(A);
+  const bLines = splitLinesKeepEmpty(B);
+
+  for (const line of aLines) {
+    const hits = rows.filter(r => r.a.tokens.map(t => t.value).join('') === line);
+    _tAssert(hits.length <= 1, 'A-side line should not be split across multiple rows');
+  }
+  for (const line of bLines) {
+    const hits = rows.filter(r => r.b.tokens.map(t => t.value).join('') === line);
+    _tAssert(hits.length <= 1, 'B-side line should not be split across multiple rows');
+  }
+}
+
 
 function test_line_replace_block_alignment() {
   const t0 = _tLogStart("test_line_replace_block_alignment");
@@ -4052,7 +4182,8 @@ function runAllTests() {
     test_chars_repair_does_not_split_it_will_by_newline_move,
     test_chars_repair_does_not_split_that_will,
     test_chars_repair_merges_trailing_punctuation,
-    test_chars_repair_merges_punctuation_after_equal_row
+    test_chars_repair_merges_punctuation_after_equal_row,
+    test_chars_respects_original_lines_in_sample2
   ];
 
   const started = performance.now();
