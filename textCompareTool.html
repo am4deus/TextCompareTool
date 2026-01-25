@@ -280,6 +280,39 @@ textarea::placeholder {
   flex-wrap: wrap;
 }
 
+.compare-method-group {
+  display: flex;
+  gap: 0;
+}
+
+.compare-method-select {
+  font-family: sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 160px;
+}
+
+.compare-method-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.compare-method-select:hover {
+  border-color: var(--text-muted);
+}
+
+.compare-method-group .btn-primary {
+  border-radius: 0 6px 6px 0;
+}
+
 button {
   font-family: sans-serif;
   font-size: 0.85rem;
@@ -622,6 +655,11 @@ body.result-only-mode .results-section {
   border-bottom: none;
 }
 
+/* BLANK行（内部処理用マーカー）を非表示 */
+.diff-table tr.blank-row {
+  display: none;
+}
+
 .diff-table td:nth-child(2),
 .diff-table td:nth-child(3) {
   width: 50%;
@@ -962,10 +1000,15 @@ footer a:hover {
   </div>
 
   <div class="actions">
-    <button class="btn-primary" onclick="compareHybrid()">比較する (Ctrl+Enter)</button>
-    <button class="btn-secondary" onclick="compareLine()">行比較</button>
-    <button class="btn-secondary" onclick="compareChars()">文字比較</button>
-    <button class="btn-secondary" onclick="compareCharsLegacy()">文字比較（レガシー）</button>
+    <div class="compare-method-group">
+      <select id="compareMethod" class="compare-method-select">
+        <option value="hybrid" selected>ハイブリッド比較</option>
+        <option value="line">行比較</option>
+        <option value="chars">文字比較</option>
+        <option value="charsLegacy">文字比較（レガシー）</option>
+      </select>
+      <button class="btn-primary" onclick="compare()">比較する (Ctrl+Enter)</button>
+    </div>
     <button class="btn-secondary btn-icon" onclick="swapTexts()" title="左右入れ替え">⇄<span>入替</span></button>
     <button class="btn-secondary" onclick="clearAll()">クリア</button>
     <button class="btn-secondary" onclick="loadSample()">サンプル</button>
@@ -1072,7 +1115,818 @@ footer a:hover {
   </footer>
 </div>
 
+<!-- 進捗表示モーダル -->
+<div id="progressModal" class="progress-modal">
+  <div class="progress-content">
+    <div class="progress-spinner"></div>
+    <div class="progress-text" id="progressText">処理中...</div>
+    <div class="progress-bar-container">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div class="progress-detail" id="progressDetail"></div>
+  </div>
+</div>
+
+<!-- 警告ダイアログ -->
+<div id="warningModal" class="warning-modal">
+  <div class="warning-content">
+    <div class="warning-icon">⚠️</div>
+    <div class="warning-title" id="warningTitle">処理に時間がかかる可能性があります</div>
+    <div class="warning-message" id="warningMessage"></div>
+    <div class="warning-buttons" id="warningButtons"></div>
+  </div>
+</div>
+
+<style>
+.warning-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 10001;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(2px);
+}
+
+.warning-modal.visible {
+  display: flex;
+}
+
+.warning-content {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 24px 32px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  max-width: 420px;
+}
+
+.warning-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+}
+
+.warning-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.warning-message {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.warning-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.warning-buttons button {
+  min-width: 120px;
+}
+</style>
+
+<style>
+.progress-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(2px);
+}
+
+.progress-modal.visible {
+  display: flex;
+}
+
+.progress-content {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 32px 48px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  min-width: 300px;
+}
+
+.progress-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  margin: 0 auto 16px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.progress-text {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 8px;
+  background: var(--surface-raised);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--insert));
+  border-radius: 4px;
+  width: 0%;
+  transition: width 0.2s ease;
+}
+
+.progress-bar.indeterminate {
+  width: 30%;
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% { margin-left: 0%; width: 30%; }
+  50% { margin-left: 35%; width: 30%; }
+  100% { margin-left: 70%; width: 30%; }
+}
+
+.progress-detail {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+</style>
+
 <script>
+// 進捗表示関連
+let _progressCallback = null; // 進捗コールバック（処理中に呼ばれる）
+let diffWorker = null; // Web Worker
+
+const progressModal = {
+  show(text = '処理中...', detail = '', indeterminate = false) {
+    const modal = document.getElementById('progressModal');
+    const textEl = document.getElementById('progressText');
+    const detailEl = document.getElementById('progressDetail');
+    const barEl = document.getElementById('progressBar');
+    
+    textEl.textContent = text;
+    detailEl.textContent = detail;
+    barEl.style.width = '0%';
+    barEl.style.marginLeft = '0%';
+    
+    if (indeterminate) {
+      barEl.classList.add('indeterminate');
+    } else {
+      barEl.classList.remove('indeterminate');
+    }
+    
+    modal.classList.add('visible');
+  },
+  
+  update(percent, text, detail) {
+    const textEl = document.getElementById('progressText');
+    const detailEl = document.getElementById('progressDetail');
+    const barEl = document.getElementById('progressBar');
+    
+    if (text !== undefined) textEl.textContent = text;
+    if (detail !== undefined) detailEl.textContent = detail;
+    if (percent !== undefined) {
+      barEl.classList.remove('indeterminate');
+      barEl.style.marginLeft = '0%';
+      barEl.style.width = Math.min(100, Math.max(0, percent)) + '%';
+    }
+  },
+  
+  hide() {
+    const modal = document.getElementById('progressModal');
+    const barEl = document.getElementById('progressBar');
+    barEl.classList.remove('indeterminate');
+    modal.classList.remove('visible');
+    _progressCallback = null;
+  }
+};
+
+// 警告ダイアログ
+const warningModal = {
+  show(title, message, buttons) {
+    const modal = document.getElementById('warningModal');
+    const titleEl = document.getElementById('warningTitle');
+    const messageEl = document.getElementById('warningMessage');
+    const buttonsEl = document.getElementById('warningButtons');
+    
+    titleEl.textContent = title;
+    messageEl.innerHTML = message;
+    buttonsEl.innerHTML = '';
+    
+    buttons.forEach(btn => {
+      const button = document.createElement('button');
+      button.textContent = btn.text;
+      button.className = btn.primary ? 'btn-primary' : 'btn-secondary';
+      button.onclick = () => {
+        this.hide();
+        if (btn.action) btn.action();
+      };
+      buttonsEl.appendChild(button);
+    });
+    
+    modal.classList.add('visible');
+  },
+  
+  hide() {
+    const modal = document.getElementById('warningModal');
+    modal.classList.remove('visible');
+  }
+};
+
+// Web Worker用のコードを生成
+function createDiffWorkerCode() {
+  return `
+// ===== Worker内で使用する関数群 =====
+
+function tokenize(text) {
+  const tokens = [];
+  let i = 0;
+  while (i < text.length) {
+    if (/[a-zA-Z]/.test(text[i])) {
+      let word = '';
+      while (i < text.length && /[a-zA-Z]/.test(text[i])) {
+        word += text[i];
+        i++;
+      }
+      tokens.push(word);
+    } else if (text[i] === '\\n') {
+      tokens.push('\\n');
+      i++;
+    } else if (text[i] === '\\r') {
+      i++;
+    } else {
+      tokens.push(text[i]);
+      i++;
+    }
+  }
+  return tokens;
+}
+
+function computeLCSStandard(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+  return dp;
+}
+
+function lcsLengthRow(a, b, reverse = false) {
+  const m = a.length;
+  const n = b.length;
+  let prev = new Array(n + 1).fill(0);
+  let curr = new Array(n + 1).fill(0);
+  for (let i = 1; i <= m; i++) {
+    const ai = reverse ? m - i : i - 1;
+    for (let j = 1; j <= n; j++) {
+      const bj = reverse ? n - j : j - 1;
+      if (a[ai] === b[bj]) {
+        curr[j] = prev[j - 1] + 1;
+      } else {
+        curr[j] = Math.max(prev[j], curr[j - 1]);
+      }
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev;
+}
+
+function hirschbergLCS(a, b) {
+  const matches = [];
+  const queue = [[0, a.length, 0, b.length]];
+  
+  while (queue.length > 0) {
+    const [aStart, aEnd, bStart, bEnd] = queue.pop();
+    const aLen = aEnd - aStart;
+    const bLen = bEnd - bStart;
+    
+    if (aLen === 0 || bLen === 0) continue;
+    
+    if (aLen === 1) {
+      const elem = a[aStart];
+      for (let j = bStart; j < bEnd; j++) {
+        if (b[j] === elem) {
+          matches.push({ ai: aStart, bi: j });
+          break;
+        }
+      }
+      continue;
+    }
+    
+    const aMid = aStart + Math.floor(aLen / 2);
+    const aLeft = a.slice(aStart, aMid);
+    const bSub = b.slice(bStart, bEnd);
+    const scoreL = lcsLengthRow(aLeft, bSub);
+    const aRight = a.slice(aMid, aEnd);
+    const scoreR = lcsLengthRow(aRight, bSub, true);
+    
+    let maxScore = -1;
+    let splitB = 0;
+    for (let j = 0; j <= bLen; j++) {
+      const score = scoreL[j] + scoreR[bLen - j];
+      if (score > maxScore) {
+        maxScore = score;
+        splitB = j;
+      }
+    }
+    
+    const bMid = bStart + splitB;
+    queue.push([aMid, aEnd, bMid, bEnd]);
+    queue.push([aStart, aMid, bStart, bMid]);
+  }
+  
+  matches.sort((x, y) => x.ai - y.ai || x.bi - y.bi);
+  const filtered = [];
+  let lastBi = -1;
+  for (const m of matches) {
+    if (m.bi > lastBi) {
+      filtered.push(m);
+      lastBi = m.bi;
+    }
+  }
+  return filtered;
+}
+
+function generateDiffLargeInput(a, b) {
+  const matches = hirschbergLCS(a, b);
+  const diff = [];
+  let ai = 0;
+  let bi = 0;
+  
+  for (const match of matches) {
+    while (ai < match.ai) {
+      diff.push({ type: 'delete', value: a[ai++] });
+    }
+    while (bi < match.bi) {
+      diff.push({ type: 'insert', value: b[bi++] });
+    }
+    diff.push({ type: 'equal', value: a[ai] });
+    ai++;
+    bi++;
+  }
+  
+  while (ai < a.length) {
+    diff.push({ type: 'delete', value: a[ai++] });
+  }
+  while (bi < b.length) {
+    diff.push({ type: 'insert', value: b[bi++] });
+  }
+  
+  return diff;
+}
+
+const LCS_MEMORY_THRESHOLD = 10000000;
+
+function computeLCS(a, b) {
+  const m = a.length;
+  const n = b.length;
+  if (m * n > LCS_MEMORY_THRESHOLD) {
+    return null;
+  }
+  return computeLCSStandard(a, b);
+}
+
+function generateDiff(a, b) {
+  const dp = computeLCS(a, b);
+  
+  if (dp === null) {
+    return generateDiffLargeInput(a, b);
+  }
+  
+  const diff = [];
+  let i = a.length;
+  let j = b.length;
+  
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+      diff.unshift({ type: 'equal', value: a[i - 1] });
+      i--;
+      j--;
+      continue;
+    }
+    const left = (j > 0) ? dp[i][j - 1] : -1;
+    const up   = (i > 0) ? dp[i - 1][j] : -1;
+    if (j > 0 && (i === 0 || left > up)) {
+      diff.unshift({ type: 'insert', value: b[j - 1] });
+      j--;
+      continue;
+    }
+    if (i > 0 && (j === 0 || up > left)) {
+      diff.unshift({ type: 'delete', value: a[i - 1] });
+      i--;
+      continue;
+    }
+    const aVal = (i > 0) ? a[i - 1] : null;
+    const bVal = (j > 0) ? b[j - 1] : null;
+    const aEmpty = (aVal === '');
+    const bEmpty = (bVal === '');
+    if (j > 0 && bEmpty && !aEmpty) {
+      diff.unshift({ type: 'insert', value: b[j - 1] });
+      j--;
+    } else if (i > 0 && aEmpty && !bEmpty) {
+      diff.unshift({ type: 'delete', value: a[i - 1] });
+      i--;
+    } else {
+      if (i > 0) {
+        diff.unshift({ type: 'delete', value: a[i - 1] });
+        i--;
+      } else {
+        diff.unshift({ type: 'insert', value: b[j - 1] });
+        j--;
+      }
+    }
+  }
+  return diff;
+}
+
+function splitLinesKeepEmpty(text) {
+  return text.split('\\n');
+}
+
+function diffTokensToRowTokens(diffTokens) {
+  const aTokens = [];
+  const bTokens = [];
+  for (const d of diffTokens) {
+    if (d.type === 'equal') {
+      aTokens.push({ type: 'equal', value: d.value });
+      bTokens.push({ type: 'equal', value: d.value });
+    } else if (d.type === 'delete') {
+      aTokens.push({ type: 'delete', value: d.value });
+    } else if (d.type === 'insert') {
+      bTokens.push({ type: 'insert', value: d.value });
+    }
+  }
+  return { aTokens, bTokens };
+}
+
+function buildRowsByLinesWorker(textA, textB, progressFn) {
+  const rows = [];
+  const rawLinesA = splitLinesKeepEmpty(textA);
+  const rawLinesB = splitLinesKeepEmpty(textB);
+
+  function _isBlankLine(s) { return s === '' || /^[ \\t]+$/.test(s); }
+  
+  const workLinesA = rawLinesA.map((ln, idx) => (_isBlankLine(ln) ? ('\\uE000BLANK:A:' + idx) : ln));
+  const workLinesB = rawLinesB.map((ln, idx) => (_isBlankLine(ln) ? ('\\uE000BLANK:B:' + idx) : ln));
+
+  progressFn(10, '行単位で比較中...', rawLinesA.length + ' 行 × ' + rawLinesB.length + ' 行');
+  
+  const lineDiff = generateDiff(workLinesA, workLinesB);
+  
+  progressFn(30, '行内の差分を解析中...', lineDiff.length + ' 個の差分ブロック');
+
+  function pushRow(aTokens, bTokens, opts) {
+    rows.push({
+      a: { tokens: aTokens || [], isEmpty: !!(opts && opts.aEmpty) },
+      b: { tokens: bTokens || [], isEmpty: !!(opts && opts.bEmpty) }
+    });
+  }
+
+  function _decodeLine(v) {
+    if (typeof v === 'string') {
+      const mm = v.match(/^(?:\\uE000|\\u0000)?BLANK:(A|B):(\\d+)$/);
+      if (mm) {
+        const side = mm[1];
+        const idx = parseInt(mm[2], 10) | 0;
+        return (side === 'A') ? rawLinesA[idx] : rawLinesB[idx];
+      }
+    }
+    return v;
+  }
+
+  function _diceSimilarity(a, b) {
+    if (a === b) return 1;
+    if (!a || !b) return 0;
+    const bigrams = (s) => { const out = []; for (let i = 0; i + 1 < s.length; i++) out.push(s.slice(i, i + 2)); return out; };
+    const A = bigrams(a);
+    const B = bigrams(b);
+    if (A.length === 0 || B.length === 0) return 0;
+    const m = new Map();
+    for (const x of A) m.set(x, (m.get(x) || 0) + 1);
+    let inter = 0;
+    for (const y of B) {
+      const c = m.get(y) || 0;
+      if (c > 0) { inter++; m.set(y, c - 1); }
+    }
+    return (2 * inter) / (A.length + B.length);
+  }
+
+  function _lineSimilarity(aLine, bLine) {
+    const aEmpty = _isBlankLine(aLine);
+    const bEmpty = _isBlankLine(bLine);
+    if (aEmpty !== bEmpty) return -1;
+    if (aEmpty && bEmpty) return 0.40;
+    const norm = (s) => s ? String(s).replace(/\\r/g, '').replace(/[ \\t]+/g, ' ').toLowerCase() : '';
+    const a = norm(aLine);
+    const b = norm(bLine);
+    if (!a && !b) return 0.40;
+    if (a === b) return 1.0;
+    return _diceSimilarity(a, b);
+  }
+
+  function _alignReplaceBlock(delLines, insLines) {
+    const n = delLines.length;
+    const m = insLines.length;
+    const gap = 0.65;
+    const BIG = 9999;
+    const dp = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
+    const bt = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
+    dp[0][0] = 0;
+    for (let i = 1; i <= n; i++) { dp[i][0] = dp[i - 1][0] + gap; bt[i][0] = 2; }
+    for (let j = 1; j <= m; j++) { dp[0][j] = dp[0][j - 1] + gap; bt[0][j] = 3; }
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        const sim = _lineSimilarity(delLines[i - 1], insLines[j - 1]);
+        const matchCost = (sim < 0) ? BIG : (1 - sim);
+        const cMatch = dp[i - 1][j - 1] + matchCost;
+        const cDel = dp[i - 1][j] + gap;
+        const cIns = dp[i][j - 1] + gap;
+        let best = cMatch, code = 1;
+        if (cDel < best) { best = cDel; code = 2; }
+        if (cIns < best) { best = cIns; code = 3; }
+        dp[i][j] = best;
+        bt[i][j] = code;
+      }
+    }
+    const pairsRev = [];
+    let i = n, j = m;
+    while (i > 0 || j > 0) {
+      const code = bt[i][j];
+      if (code === 1) { pairsRev.push({ a: delLines[i - 1], b: insLines[j - 1] }); i--; j--; }
+      else if (code === 2) { pairsRev.push({ a: delLines[i - 1], b: null }); i--; }
+      else { pairsRev.push({ a: null, b: insLines[j - 1] }); j--; }
+    }
+    pairsRev.reverse();
+    return pairsRev;
+  }
+
+  let lastProgressUpdate = Date.now();
+  for (let i = 0; i < lineDiff.length; i++) {
+    // 進捗報告（200ms毎）
+    if (Date.now() - lastProgressUpdate > 200) {
+      const progress = 30 + Math.floor((i / lineDiff.length) * 50);
+      progressFn(progress, '行内の差分を解析中...', i + ' / ' + lineDiff.length + ' ブロック');
+      lastProgressUpdate = Date.now();
+    }
+    
+    const item = lineDiff[i];
+
+    if (item.type === 'equal') {
+      const eqV = _decodeLine(item.value);
+      pushRow([{ type: 'equal', value: eqV }], [{ type: 'equal', value: eqV }]);
+      continue;
+    }
+
+    const delBlock = [];
+    const insBlock = [];
+    let j = i;
+    while (j < lineDiff.length && (lineDiff[j].type === 'delete' || lineDiff[j].type === 'insert')) {
+      if (lineDiff[j].type === 'delete') {
+        if (lineDiff[j].value !== '\\n') delBlock.push(lineDiff[j].value);
+      } else if (lineDiff[j].type === 'insert') {
+        if (lineDiff[j].value !== '\\n') insBlock.push(lineDiff[j].value);
+      }
+      j++;
+    }
+
+    if (delBlock.length && insBlock.length) {
+      const pairs = _alignReplaceBlock(delBlock, insBlock);
+      for (const p of pairs) {
+        const aLine = p.a;
+        const bLine = p.b;
+        if (aLine != null && bLine != null && _isBlankLine(aLine) && _isBlankLine(bLine)) {
+          pushRow([{ type: 'equal', value: aLine }], [{ type: 'equal', value: bLine }]);
+          continue;
+        }
+        if (aLine != null && bLine == null) {
+          if (aLine === '') pushRow([{ type: 'newline-delete', value: '↵' }], [], { bEmpty: true });
+          else pushRow([{ type: 'delete', value: aLine }], [], { bEmpty: true });
+          continue;
+        }
+        if (aLine == null && bLine != null) {
+          if (bLine === '') pushRow([], [{ type: 'newline-insert', value: '↵' }], { aEmpty: true });
+          else pushRow([], [{ type: 'insert', value: bLine }], { aEmpty: true });
+          continue;
+        }
+        if (aLine === '' && bLine === '') {
+          pushRow([{ type: 'equal', value: '' }], [{ type: 'equal', value: '' }]);
+          continue;
+        }
+        const tokenDiff = generateDiff(tokenize(aLine), tokenize(bLine));
+        const { aTokens, bTokens } = diffTokensToRowTokens(tokenDiff);
+        pushRow(aTokens, bTokens);
+      }
+    } else if (delBlock.length) {
+      for (const aLine of delBlock) {
+        if (aLine === '') pushRow([{ type: 'newline-delete', value: '↵' }], [], { bEmpty: true });
+        else pushRow([{ type: 'delete', value: aLine }], [], { bEmpty: true });
+      }
+    } else {
+      for (const bLine of insBlock) {
+        if (bLine === '') pushRow([], [{ type: 'newline-insert', value: '↵' }], { aEmpty: true });
+        else pushRow([], [{ type: 'insert', value: bLine }], { aEmpty: true });
+      }
+    }
+    i = j - 1;
+  }
+
+  progressFn(85, '結果を整理中...', rows.length + ' 行');
+  return rows;
+}
+
+// 行比較（行内差分なし）
+function compareLineWorker(textA, textB, progressFn) {
+  const rows = [];
+  const linesA = splitLinesKeepEmpty(textA);
+  const linesB = splitLinesKeepEmpty(textB);
+  
+  progressFn(10, '行単位で比較中...', linesA.length + ' 行 × ' + linesB.length + ' 行');
+  
+  const diff = generateDiff(linesA, linesB);
+  
+  progressFn(50, '結果を整理中...', diff.length + ' 個の差分');
+  
+  for (const item of diff) {
+    if (item.type === 'equal') {
+      rows.push({
+        a: { tokens: [{ type: 'equal', value: item.value }], isEmpty: false },
+        b: { tokens: [{ type: 'equal', value: item.value }], isEmpty: false }
+      });
+    } else if (item.type === 'delete') {
+      rows.push({
+        a: { tokens: [{ type: 'delete', value: item.value }], isEmpty: false },
+        b: { tokens: [], isEmpty: true }
+      });
+    } else if (item.type === 'insert') {
+      rows.push({
+        a: { tokens: [], isEmpty: true },
+        b: { tokens: [{ type: 'insert', value: item.value }], isEmpty: false }
+      });
+    }
+  }
+  
+  progressFn(90, '完了', rows.length + ' 行');
+  return rows;
+}
+
+// 文字比較（トークン単位、行境界保持）
+function compareCharsWorker(textA, textB, progressFn) {
+  progressFn(5, '行単位で解析中...');
+  return buildRowsByLinesWorker(textA, textB, progressFn);
+}
+
+// 文字比較レガシー（純粋なトークン単位）
+function compareCharsLegacyWorker(textA, textB, progressFn) {
+  const rows = [];
+  
+  progressFn(10, 'トークン化中...');
+  const tokensA = tokenize(textA);
+  const tokensB = tokenize(textB);
+  
+  progressFn(20, '差分計算中...', tokensA.length + ' × ' + tokensB.length + ' トークン');
+  const diff = generateDiff(tokensA, tokensB);
+  
+  progressFn(60, '行に分割中...', diff.length + ' 個の差分');
+  
+  let currentA = [];
+  let currentB = [];
+  
+  function pushRow(aTokens, bTokens) {
+    rows.push({
+      a: { tokens: aTokens, isEmpty: aTokens.length === 0 },
+      b: { tokens: bTokens, isEmpty: bTokens.length === 0 }
+    });
+  }
+  
+  function flush(forceEmpty = false) {
+    if (forceEmpty) {
+      pushRow([], []);
+    } else if (currentA.length > 0 || currentB.length > 0) {
+      pushRow(currentA, currentB);
+    }
+    currentA = [];
+    currentB = [];
+  }
+  
+  function emitNewlineOnly(which) {
+    if (which === 'A') {
+      pushRow([{ type: 'newline-delete', value: '↵' }], []);
+    } else {
+      pushRow([], [{ type: 'newline-insert', value: '↵' }]);
+    }
+  }
+  
+  for (const item of diff) {
+    const v = item.value;
+    if (v === '\\n') {
+      if (item.type === 'equal') {
+        if (currentA.length === 0 && currentB.length === 0) flush(true);
+        else flush(false);
+      } else if (item.type === 'delete') {
+        flush(false);
+        emitNewlineOnly('A');
+      } else if (item.type === 'insert') {
+        flush(false);
+        emitNewlineOnly('B');
+      }
+      continue;
+    }
+    
+    if (item.type === 'equal') {
+      currentA.push({ type: 'equal', value: v });
+      currentB.push({ type: 'equal', value: v });
+    } else if (item.type === 'delete') {
+      currentA.push({ type: 'delete', value: v });
+    } else if (item.type === 'insert') {
+      currentB.push({ type: 'insert', value: v });
+    }
+  }
+  
+  flush(false);
+  progressFn(90, '完了', rows.length + ' 行');
+  return rows;
+}
+
+// メッセージ受信
+self.onmessage = function(e) {
+  const { textA, textB, method } = e.data;
+  
+  try {
+    let rows;
+    const progressFn = (percent, text, detail) => {
+      self.postMessage({ type: 'progress', percent, text, detail });
+    };
+    
+    switch (method) {
+      case 'line':
+        rows = compareLineWorker(textA, textB, progressFn);
+        break;
+      case 'chars':
+        rows = compareCharsWorker(textA, textB, progressFn);
+        break;
+      case 'charsLegacy':
+        rows = compareCharsLegacyWorker(textA, textB, progressFn);
+        break;
+      case 'hybrid':
+      default:
+        rows = buildRowsByLinesWorker(textA, textB, progressFn);
+        break;
+    }
+    
+    self.postMessage({ type: 'complete', rows, method });
+  } catch (error) {
+    self.postMessage({ type: 'error', message: error.message });
+  }
+};
+`;
+}
+
+// Web Workerを初期化
+function initDiffWorker() {
+  if (diffWorker) {
+    diffWorker.terminate();
+  }
+  const blob = new Blob([createDiffWorkerCode()], { type: 'application/javascript' });
+  const url = URL.createObjectURL(blob);
+  diffWorker = new Worker(url);
+  URL.revokeObjectURL(url);
+  return diffWorker;
+}
+
 // 入力欄のテキストを行単位でソート
 function sortInput(textareaId, order) {
   const textarea = document.getElementById(textareaId);
@@ -1152,7 +2006,10 @@ function tokenize(text) {
 }
 
 // 最長共通部分列（LCS）を用いた差分検出
-function computeLCS(a, b) {
+// 大きな入力に対応するため、メモリ効率の良い実装を使用
+
+// 標準のO(mn)メモリLCS（小さい入力用）
+function computeLCSStandard(a, b) {
   const m = a.length;
   const n = b.length;
   const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
@@ -1169,6 +2026,144 @@ function computeLCS(a, b) {
   return dp;
 }
 
+// メモリ効率の良いLCS長計算（1行分のみ保持、逆方向対応）
+function lcsLengthRow(a, b, reverse = false) {
+  const m = a.length;
+  const n = b.length;
+  let prev = new Array(n + 1).fill(0);
+  let curr = new Array(n + 1).fill(0);
+  
+  for (let i = 1; i <= m; i++) {
+    const ai = reverse ? m - i : i - 1;
+    for (let j = 1; j <= n; j++) {
+      const bj = reverse ? n - j : j - 1;
+      if (a[ai] === b[bj]) {
+        curr[j] = prev[j - 1] + 1;
+      } else {
+        curr[j] = Math.max(prev[j], curr[j - 1]);
+      }
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev;
+}
+
+// Hirschberg法によるLCS復元（O(n)メモリ、反復的実装）
+function hirschbergLCS(a, b) {
+  const matches = [];
+  
+  // ワークキュー：処理待ちの区間 [aStart, aEnd, bStart, bEnd]
+  const queue = [[0, a.length, 0, b.length]];
+  
+  while (queue.length > 0) {
+    const [aStart, aEnd, bStart, bEnd] = queue.pop();
+    const aLen = aEnd - aStart;
+    const bLen = bEnd - bStart;
+    
+    if (aLen === 0 || bLen === 0) continue;
+    
+    // 基底ケース：aが1要素
+    if (aLen === 1) {
+      const elem = a[aStart];
+      for (let j = bStart; j < bEnd; j++) {
+        if (b[j] === elem) {
+          matches.push({ ai: aStart, bi: j });
+          break;
+        }
+      }
+      continue;
+    }
+    
+    // aを半分に分割
+    const aMid = aStart + Math.floor(aLen / 2);
+    
+    // 左半分のスコア計算
+    const aLeft = a.slice(aStart, aMid);
+    const bSub = b.slice(bStart, bEnd);
+    const scoreL = lcsLengthRow(aLeft, bSub);
+    
+    // 右半分のスコア計算（逆方向）
+    const aRight = a.slice(aMid, aEnd);
+    const scoreR = lcsLengthRow(aRight, bSub, true);
+    
+    // 最適な分割点を見つける
+    let maxScore = -1;
+    let splitB = 0;
+    for (let j = 0; j <= bLen; j++) {
+      const score = scoreL[j] + scoreR[bLen - j];
+      if (score > maxScore) {
+        maxScore = score;
+        splitB = j;
+      }
+    }
+    
+    const bMid = bStart + splitB;
+    
+    // 右側を先にpush（popで取り出すので左側が先に処理される）
+    queue.push([aMid, aEnd, bMid, bEnd]);
+    queue.push([aStart, aMid, bStart, bMid]);
+  }
+  
+  // マッチをソート（ai順）
+  matches.sort((x, y) => x.ai - y.ai || x.bi - y.bi);
+  
+  // 重複除去と順序保証（LCSの性質：aiもbiも単調増加）
+  const filtered = [];
+  let lastBi = -1;
+  for (const m of matches) {
+    if (m.bi > lastBi) {
+      filtered.push(m);
+      lastBi = m.bi;
+    }
+  }
+  
+  return filtered;
+}
+
+// 大きな入力用の差分生成（Hirschberg法使用）
+function generateDiffLargeInput(a, b) {
+  const matches = hirschbergLCS(a, b);
+  const diff = [];
+  let ai = 0;
+  let bi = 0;
+  
+  for (const match of matches) {
+    while (ai < match.ai) {
+      diff.push({ type: 'delete', value: a[ai++] });
+    }
+    while (bi < match.bi) {
+      diff.push({ type: 'insert', value: b[bi++] });
+    }
+    diff.push({ type: 'equal', value: a[ai] });
+    ai++;
+    bi++;
+  }
+  
+  while (ai < a.length) {
+    diff.push({ type: 'delete', value: a[ai++] });
+  }
+  while (bi < b.length) {
+    diff.push({ type: 'insert', value: b[bi++] });
+  }
+  
+  return diff;
+}
+
+// メモリ制限チェック（積がこの値を超えたらHirschberg法を使用）
+const LCS_MEMORY_THRESHOLD = 10000000; // 10M cells
+
+function computeLCS(a, b) {
+  const m = a.length;
+  const n = b.length;
+  
+  // 大きすぎる場合はnullを返し、呼び出し元で対応
+  if (m * n > LCS_MEMORY_THRESHOLD) {
+    return null;
+  }
+  
+  return computeLCSStandard(a, b);
+}
+
 /**
  * LCS（computeLCS）で得た「等価行の対応（match）」をアンカーとして、
  * その間の差分（delete/insert）を「元の位置のまま」吐く。
@@ -1177,6 +2172,12 @@ function computeLCS(a, b) {
  */
 function generateDiffAnchored(a, b) {
   const dp = computeLCS(a, b);
+  
+  // 大きな入力の場合はHirschberg法を使用
+  if (dp === null) {
+    return generateDiffLargeInput(a, b);
+  }
+  
   let i = a.length;
   let j = b.length;
   const matches = [];
@@ -1236,6 +2237,12 @@ function generateDiffAnchored(a, b) {
 // 差分を生成
 function generateDiff(a, b) {
   const dp = computeLCS(a, b);
+  
+  // 大きな入力の場合はHirschberg法を使用
+  if (dp === null) {
+    return generateDiffLargeInput(a, b);
+  }
+  
   const diff = [];
   let i = a.length;
   let j = b.length;
@@ -1473,7 +2480,7 @@ function buildRowsByLines(textA, textB) {
   // 空行/空白行は「位置が意味」なので、LCSで別位置同士が一致扱いにならないように side+index を埋め込む
   const workLinesA = rawLinesA.map((ln, idx) => (_isBlankLine(ln) ? ('\uE000BLANK:A:' + idx) : ln));
   const workLinesB = rawLinesB.map((ln, idx) => (_isBlankLine(ln) ? ('\uE000BLANK:B:' + idx) : ln));
-
+  
   const lineDiff = generateDiff(workLinesA, workLinesB);
 
   function pushRow(aTokens, bTokens, opts) {
@@ -2039,74 +3046,201 @@ function repairMidlineNewlineRows(rows) {
     return s;
   }
 
-  function isLeadingWordOnlyRow(r) {
+  function singleSideRow(r) {
     const aEmpty = r.a.tokens.length === 0;
     const bEmpty = r.b.tokens.length === 0;
-    if (aEmpty === bEmpty) return false; // 片側だけ
-    const tokens = aEmpty ? r.b.tokens : r.a.tokens;
-    const s = tokenText(tokens);
-
-    // 改行は含まない
-    if (s.indexOf('\n') !== -1) return false;
-
-    // 1単語（英数字/記号混在でもOK）+ 末尾に空白が無い、というくらいの緩い判定
-    // （"It" / "That" / "Will" などを想定）
-    if (s.trim() !== s) return false; // 前後に空白を含むなら単語だけではない
-    if (s.length === 0) return false;
-    // スペースを含むなら単語だけではない
-    if (s.indexOf(' ') !== -1 || s.indexOf('\t') !== -1) return false;
-
-    return true;
+    if (aEmpty === bEmpty) return null; // 両方 or 両方空
+    return aEmpty ? 'b' : 'a';
   }
 
-  function startsWithSpaceOnNonEmptySide(r) {
-    const aEmpty = r.a.tokens.length === 0;
-    const bEmpty = r.b.tokens.length === 0;
-    // 両方空は除外
-    if (aEmpty && bEmpty) return false;
+  function rowTextNoNewline(r, side) {
+    const tokens = r[side].tokens;
+    const s = tokenText(tokens);
+    if (s.indexOf('\n') !== -1) return null;
+    return s;
+  }
 
-    // どちらかの表示側テキストの先頭がスペースなら true
-    const aText = aEmpty ? '' : tokenText(r.a.tokens);
-    const bText = bEmpty ? '' : tokenText(r.b.tokens);
+  function startsWithSpace(text) {
+    return !!text && (text[0] === ' ' || text[0] === '\t');
+  }
 
-    const aOk = aText.length > 0 && (aText[0] === ' ' || aText[0] === '\t');
-    const bOk = bText.length > 0 && (bText[0] === ' ' || bText[0] === '\t');
-
-    return aOk || bOk;
+  function startsWithPunctuation(text) {
+    return !!text && /^[\s]*[,.、。．;:!?]/.test(text);
   }
 
   const out = [];
   for (let i = 0; i < rows.length; i++) {
-    // パターン: [単語だけ片側] [改行差分] [先頭スペースで続く行]
-    if (i + 2 < rows.length && isLeadingWordOnlyRow(rows[i]) && isNewlineOnlyRow(rows[i + 1]) && startsWithSpaceOnNonEmptySide(rows[i + 2])) {
-      const wordRow = rows[i];
-      const nlRow = rows[i + 1];
-      const contRow = rows[i + 2];
+    if (i + 2 < rows.length && isNewlineOnlyRow(rows[i + 1])) {
+      let mergedRow = null;
+      let matched = false;
 
-      // 1) まず改行差分行を先に出す（＝本来の行境界として扱う）
-      out.push(nlRow);
+      const contSideAfterEqual = singleSideRow(rows[i + 2]);
+      const leadSideAfterEqual = singleSideRow(rows[i]);
+      if (contSideAfterEqual && !leadSideAfterEqual) {
+        const baseRow = rows[i];
+        const nlRow = rows[i + 1];
+        const contRow = rows[i + 2];
 
-      // 2) 単語行 + 続き行 を統合
-      const merged = {
-        a: { tokens: [], isEmpty: false },
-        b: { tokens: [], isEmpty: false }
-      };
+        const merged = {
+          a: { tokens: baseRow.a.tokens.slice(), isEmpty: baseRow.a.tokens.length === 0 },
+          b: { tokens: baseRow.b.tokens.slice(), isEmpty: baseRow.b.tokens.length === 0 }
+        };
 
-      // A側
-      merged.a.tokens = (wordRow.a.tokens.length ? wordRow.a.tokens.slice() : []).concat(contRow.a.tokens.length ? contRow.a.tokens.slice() : []);
-      merged.b.tokens = (wordRow.b.tokens.length ? wordRow.b.tokens.slice() : []).concat(contRow.b.tokens.length ? contRow.b.tokens.slice() : []);
+        if (contSideAfterEqual === 'a') {
+          merged.a.tokens = merged.a.tokens.concat(contRow.a.tokens.slice());
+          merged.a.isEmpty = merged.a.tokens.length === 0;
+        } else {
+          merged.b.tokens = merged.b.tokens.concat(contRow.b.tokens.slice());
+          merged.b.isEmpty = merged.b.tokens.length === 0;
+        }
 
-      merged.a.isEmpty = merged.a.tokens.length === 0;
-      merged.b.isEmpty = merged.b.tokens.length === 0;
+        out.push(merged);
+        out.push(nlRow);
 
-      out.push(merged);
+        i += 2;
+        continue;
+      }
 
-      i += 2;
-      continue;
+      for (const side of ['a', 'b']) {
+        const other = side === 'a' ? 'b' : 'a';
+        const leadSide = singleSideRow(rows[i]);
+        if (leadSide !== side) continue;
+        if (rows[i][other].tokens.length !== 0) continue;
+
+        const contText = rowTextNoNewline(rows[i + 2], side);
+        if (!contText || !(startsWithSpace(contText) || startsWithPunctuation(contText))) continue;
+
+        const leadText = rowTextNoNewline(rows[i], side);
+        if (!leadText) continue;
+
+        const leadRow = rows[i];
+        const nlRow = rows[i + 1];
+        const contRow = rows[i + 2];
+
+        mergedRow = {
+          a: { tokens: [], isEmpty: false },
+          b: { tokens: [], isEmpty: false }
+        };
+
+        mergedRow.a.tokens = side === 'a'
+          ? (leadRow.a.tokens.length ? leadRow.a.tokens.slice() : []).concat(contRow.a.tokens.length ? contRow.a.tokens.slice() : [])
+          : (contRow.a.tokens.length ? contRow.a.tokens.slice() : []);
+        mergedRow.b.tokens = side === 'b'
+          ? (leadRow.b.tokens.length ? leadRow.b.tokens.slice() : []).concat(contRow.b.tokens.length ? contRow.b.tokens.slice() : [])
+          : (contRow.b.tokens.length ? contRow.b.tokens.slice() : []);
+
+        mergedRow.a.isEmpty = mergedRow.a.tokens.length === 0;
+        mergedRow.b.isEmpty = mergedRow.b.tokens.length === 0;
+
+        out.push(nlRow);
+        out.push(mergedRow);
+
+        matched = true;
+        break;
+      }
+
+      if (matched) {
+        i += 2;
+        continue;
+      }
     }
 
     out.push(rows[i]);
   }
+
+  return out;
+}
+
+// 文字比較の行分割で「元の1行が複数行に割れる」ことを防ぐために、
+// 元テキストの行境界に合わせて行を再結合する。
+function enforceOriginalLineBoundaries(rows, textA, textB) {
+  const linesA = splitLinesKeepEmpty(textA);
+  const linesB = splitLinesKeepEmpty(textB);
+
+  function tokensText(tokens) {
+    let s = '';
+    for (const t of tokens) s += (t && t.value) ? t.value : '';
+    return s;
+  }
+
+  function isNewlineOnlyRow(r) {
+    const aLen = r.a.tokens.length;
+    const bLen = r.b.tokens.length;
+    const aNewlineOnly = (aLen === 1 && r.a.tokens[0].type && String(r.a.tokens[0].type).startsWith('newline') && bLen === 0);
+    const bNewlineOnly = (bLen === 1 && r.b.tokens[0].type && String(r.b.tokens[0].type).startsWith('newline') && aLen === 0);
+    return { aNewlineOnly, bNewlineOnly, isNewlineOnly: aNewlineOnly || bNewlineOnly };
+  }
+
+  const out = [];
+  let accA = '';
+  let accB = '';
+  let curA = [];
+  let curB = [];
+  let aIdx = 0;
+  let bIdx = 0;
+  let pendingNewlines = [];
+
+  function flushCurrent() {
+    if (curA.length || curB.length) {
+      out.push({
+        a: { tokens: curA, isEmpty: curA.length === 0 },
+        b: { tokens: curB, isEmpty: curB.length === 0 }
+      });
+      curA = [];
+      curB = [];
+      accA = '';
+      accB = '';
+    }
+  }
+
+  function drainPending() {
+    if (!pendingNewlines.length) return;
+    for (const row of pendingNewlines) out.push(row);
+    pendingNewlines = [];
+  }
+
+  for (const row of rows) {
+    const { isNewlineOnly } = isNewlineOnlyRow(row);
+
+    if (isNewlineOnly) {
+      if (!accA && !accB && curA.length === 0 && curB.length === 0) {
+        out.push(row);
+      } else {
+        pendingNewlines.push(row);
+      }
+      continue;
+    }
+
+    if (row.a.tokens.length === 0 && row.b.tokens.length === 0) {
+      if (!accA && !accB && curA.length === 0 && curB.length === 0) {
+        out.push(row);
+        if (aIdx < linesA.length) aIdx++;
+        if (bIdx < linesB.length) bIdx++;
+        continue;
+      }
+    }
+
+    curA = curA.concat(row.a.tokens);
+    curB = curB.concat(row.b.tokens);
+    accA += tokensText(row.a.tokens);
+    accB += tokensText(row.b.tokens);
+
+    const targetA = (aIdx < linesA.length) ? linesA[aIdx] : null;
+    const targetB = (bIdx < linesB.length) ? linesB[bIdx] : null;
+
+    const doneA = targetA != null ? accA === targetA : true;
+    const doneB = targetB != null ? accB === targetB : true;
+
+    if (doneA && doneB) {
+      flushCurrent();
+      aIdx++;
+      bIdx++;
+      drainPending();
+    }
+  }
+
+  flushCurrent();
+  drainPending();
 
   return out;
 }
@@ -2256,24 +3390,10 @@ function toggleResultOnly() {
 }
 
 // メイン比較関数
+// 旧関数（互換性のため残す）
 function compareLine() {
-  let textA = document.getElementById('textA').value;
-  let textB = document.getElementById('textB').value;
-
-  // 改行コード正規化（WindowsのCRLF/CRをLFに統一）
-  textA = textA.replace(/\r\n?/g, '\n');
-  textB = textB.replace(/\r\n?/g, '\n');
-const rows = _normalizeRowsTokens(buildRowsByLines(textA, textB));
-
-  // line-based diff でも統計用に diff 相当（差分有無判定）を作る
-  const hasDiff = rows.some(r => _tTokenArray(r.a.tokens).some(t => t.type !== 'equal') || _tTokenArray(r.b.tokens).some(t => t.type !== 'equal'));
-// Excelダウンロード用に保存
-  lastDiffRows = rows;
-  
-  // Excelダウンロード用に保存
-  lastDiffRows = rows;
-
-  renderComparisonRows(rows, textA, textB, hasDiff);
+  document.getElementById('compareMethod').value = 'line';
+  compare();
 }
 
 function renderComparisonRows(rows, textA, textB, hasDiff) {
@@ -2302,6 +3422,13 @@ function renderComparisonRows(rows, textA, textB, hasDiff) {
     let lineNum = 1;
     for (const row of rows) {
       const tr = document.createElement('tr');
+
+      // BLANK行（内部マーカー）を検出して非表示にする
+      const aText = row.a.tokens.map(t => t.value || '').join('');
+      const bText = row.b.tokens.map(t => t.value || '').join('');
+      if (/^[\uE000\u0000]?BLANK:[AB]:\d+$/.test(aText) || /^[\uE000\u0000]?BLANK:[AB]:\d+$/.test(bText)) {
+        tr.classList.add('blank-row');
+      }
 
       // 差分がない行はクラス付与（差分のみ表示で非表示にする）
       const rowHasDiff = _tTokenArray(row.a.tokens).some(t => t.type === 'delete' || (t.type && t.type.startsWith('newline'))) ||
@@ -2406,54 +3533,190 @@ function _normalizeRowsTokens(rows) {
   return rows;
 }
 
+// 選択された比較方式で実行
 function compare() {
-  return compareHybrid();
-}
-
-// 旧方式: 文字（トークン列）単位の比較
-function compareChars() {
+  const method = document.getElementById('compareMethod').value;
+  
   let textA = document.getElementById('textA').value;
   let textB = document.getElementById('textB').value;
-
-  // 改行コード正規化（WindowsのCRLF/CRをLFに統一）
+  
+  // 改行コード正規化
   textA = textA.replace(/\r\n?/g, '\n');
   textB = textB.replace(/\r\n?/g, '\n');
-
-  const tokensA = tokenize(textA);
-  const tokensB = tokenize(textB);
-  const diff = generateDiff(tokensA, tokensB);
-  let rows = _normalizeRowsTokens(renderDiff(diff));
-  rows = repairMidlineNewlineRows(rows);
-  // 差分があるか（行単位の表示でも判定は rows で十分）
-  const hasDiff = rows.some(r => _tTokenArray(r.a.tokens).some(t => t.type !== 'equal') || _tTokenArray(r.b.tokens).some(t => t.type !== 'equal'));
-
-  // Excelダウンロード用に保存
+  
+  const totalSize = textA.length + textB.length;
+  const SIZE_WORKER_THRESHOLD = 50000; // 50KB以上でWorker使用
+  const SIZE_LEGACY_WARNING = 100000; // 100KB = 100KB以上で警告
+  
+  // レガシー文字比較で大きな入力の場合は警告
+  if (method === 'charsLegacy' && totalSize > SIZE_LEGACY_WARNING) {
+    const sizeA = (textA.length / 1024).toFixed(1);
+    const sizeB = (textB.length / 1024).toFixed(1);
+    
+    warningModal.show(
+      '処理に時間がかかる可能性があります',
+      `文字比較（レガシー）は全文字をトークン化して比較するため、<br>` +
+      `大きなテキスト（A: ${sizeA}KB, B: ${sizeB}KB）では<br>` +
+      `処理に非常に時間がかかる場合があります。`,
+      [
+        {
+          text: '文字比較に切替',
+          primary: true,
+          action: () => {
+            document.getElementById('compareMethod').value = 'chars';
+            compare();
+          }
+        },
+        {
+          text: '続行する',
+          primary: false,
+          action: () => {
+            executeCompareWithWorker(textA, textB, method);
+          }
+        },
+        {
+          text: 'やめる',
+          primary: false,
+          action: () => {}
+        }
+      ]
+    );
+    return;
+  }
+  
+  // 大きなファイルの場合はWeb Workerで処理
+  if (totalSize > SIZE_WORKER_THRESHOLD) {
+    executeCompareWithWorker(textA, textB, method);
+    return;
+  }
+  
+  // 小さいファイルは同期処理
+  let rows;
+  switch (method) {
+    case 'line':
+      rows = _normalizeRowsTokens(buildRowsForLineCompare(textA, textB));
+      break;
+    case 'chars':
+      rows = _normalizeRowsTokens(buildRowsByLines(textA, textB));
+      break;
+    case 'charsLegacy':
+      const tokensA = tokenize(textA);
+      const tokensB = tokenize(textB);
+      const diff = generateDiff(tokensA, tokensB);
+      rows = renderDiffLegacy(diff);
+      break;
+    case 'hybrid':
+    default:
+      const result = computeHybridRows(textA, textB);
+      rows = _normalizeRowsTokens(result.rows);
+      break;
+  }
+  
+  const hasDiff = rows.some(r => 
+    _tTokenArray(r.a.tokens).some(t => t.type !== 'equal') || 
+    _tTokenArray(r.b.tokens).some(t => t.type !== 'equal')
+  );
+  
   lastDiffRows = rows;
-
-  // ここからは compareLine() と同じ描画処理
   renderComparisonRows(rows, textA, textB, hasDiff);
+}
+
+// 行比較用のrows生成（行内差分なし）
+function buildRowsForLineCompare(textA, textB) {
+  const linesA = splitLinesKeepEmpty(textA);
+  const linesB = splitLinesKeepEmpty(textB);
+  const diff = generateDiff(linesA, linesB);
+  const rows = [];
+  
+  for (const item of diff) {
+    if (item.type === 'equal') {
+      rows.push({
+        a: { tokens: [{ type: 'equal', value: item.value }], isEmpty: false },
+        b: { tokens: [{ type: 'equal', value: item.value }], isEmpty: false }
+      });
+    } else if (item.type === 'delete') {
+      rows.push({
+        a: { tokens: [{ type: 'delete', value: item.value }], isEmpty: false },
+        b: { tokens: [], isEmpty: true }
+      });
+    } else if (item.type === 'insert') {
+      rows.push({
+        a: { tokens: [], isEmpty: true },
+        b: { tokens: [{ type: 'insert', value: item.value }], isEmpty: false }
+      });
+    }
+  }
+  
+  return rows;
+}
+
+// Web Workerで比較実行
+function executeCompareWithWorker(textA, textB, method) {
+  progressModal.show('比較処理中...', `${((textA.length + textB.length) / 1024).toFixed(1)}KB のテキストを処理しています`);
+  progressModal.update(0, '準備中...');
+  
+  const startTime = Date.now();
+  const worker = initDiffWorker();
+  
+  worker.onmessage = function(e) {
+    const { type, percent, text, detail, rows, message } = e.data;
+    
+    if (type === 'progress') {
+      progressModal.update(percent, text, detail);
+    } else if (type === 'complete') {
+      const elapsed = Date.now() - startTime;
+      console.log('Worker completed in', elapsed + 'ms, method:', method);
+      
+      progressModal.update(90, '結果を表示中...', `処理時間: ${(elapsed / 1000).toFixed(1)}秒`);
+      
+      setTimeout(() => {
+        try {
+          const normalizedRows = _normalizeRowsTokens(rows);
+          const hasDiff = normalizedRows.some(r => 
+            _tTokenArray(r.a.tokens).some(t => t.type !== 'equal') || 
+            _tTokenArray(r.b.tokens).some(t => t.type !== 'equal')
+          );
+
+          lastDiffRows = normalizedRows;
+          renderComparisonRows(normalizedRows, textA, textB, hasDiff);
+          
+          progressModal.update(100, '完了', `${normalizedRows.length} 行の比較結果`);
+          setTimeout(() => progressModal.hide(), 500);
+        } catch (e) {
+          progressModal.hide();
+          console.error('Render error:', e);
+          alert('結果の表示中にエラーが発生しました');
+        }
+      }, 50);
+      
+      worker.terminate();
+    } else if (type === 'error') {
+      progressModal.hide();
+      console.error('Worker error:', message);
+      alert('比較処理中にエラーが発生しました: ' + message);
+      worker.terminate();
+    }
+  };
+  
+  worker.onerror = function(e) {
+    progressModal.hide();
+    console.error('Worker error:', e);
+    alert('Web Workerでエラーが発生しました');
+    worker.terminate();
+  };
+  
+  worker.postMessage({ textA, textB, method });
+}
+
+// 旧関数（互換性のため残す）
+function compareChars() {
+  document.getElementById('compareMethod').value = 'chars';
+  compare();
 }
 
 function compareCharsLegacy() {
-  let textA = document.getElementById('textA').value;
-  let textB = document.getElementById('textB').value;
-
-  // 改行コード正規化（WindowsのCRLF/CRをLFに統一）
-  textA = textA.replace(/\r\n?/g, '\n');
-  textB = textB.replace(/\r\n?/g, '\n');
-
-  const tokensA = tokenize(textA);
-  const tokensB = tokenize(textB);
-  const diff = generateDiff(tokensA, tokensB);
-
-  // レガシー：行内の改行差分を“修復”しない（昔の挙動を再現）
-  const rows = renderDiffLegacy(diff);
-const hasDiff = rows.some(r => _tTokenArray(r.a.tokens).some(t => t.type !== 'equal') || _tTokenArray(r.b.tokens).some(t => t.type !== 'equal'));
-
-  // Excelダウンロード用に保存
-  lastDiffRows = rows;
-
-  renderComparisonRows(rows, textA, textB, hasDiff);
+  document.getElementById('compareMethod').value = 'charsLegacy';
+  compare();
 }
 
 
@@ -2527,6 +3790,7 @@ function computeHybridRows(textA, textB) {
   const diffChars = generateDiff(tokenize(textA), tokenize(textB));
   let rowsChars = renderDiff(diffChars);
   rowsChars = repairMidlineNewlineRows(rowsChars);
+  rowsChars = enforceOriginalLineBoundaries(rowsChars, textA, textB);
 
   function rowSideContent(row, side) {
     if (!row || !row[side] || !Array.isArray(row[side].tokens)) return null;
@@ -2622,28 +3886,10 @@ function computeHybridRows(textA, textB) {
   };
 }
 
+// 旧関数（互換性のため残す）
 function compareHybrid() {
-  let textA = document.getElementById('textA').value;
-  let textB = document.getElementById('textB').value;
-
-  // 改行コード正規化（WindowsのCRLF/CRをLFに統一）
-  textA = textA.replace(/\r\n?/g, '\n');
-  textB = textB.replace(/\r\n?/g, '\n');
-
-  const result = computeHybridRows(textA, textB);
-
-  // デバッグしやすいようにコンソールへ（必要なければ消してOK）
-  console.groupCollapsed('🧩 compareHybrid: scoring');
-  console.log('method', result.method);
-  console.log('line', result.scores.line);
-  console.log('chars', result.scores.chars);
-  console.groupEnd();
-
-  const rows = _normalizeRowsTokens(result.rows);
-  const hasDiff = rows.some(r => _tTokenArray(r.a.tokens).some(t => t.type !== 'equal') || _tTokenArray(r.b.tokens).some(t => t.type !== 'equal'));
-
-  lastDiffRows = rows;
-  renderComparisonRows(rows, textA, textB, hasDiff);
+  document.getElementById('compareMethod').value = 'hybrid';
+  compare();
 }
 
 
@@ -2705,7 +3951,7 @@ CAAAAAAAAAAAAAA     D9*************** AAAAAAA32`;
   document.getElementById('textA').value = a;
   document.getElementById('textB').value = b;
   // すぐ比較したい場合は次を有効化（現状は入力だけ）
-  compareHybrid();
+  compare();
 }
 
 function loadSample3() {
@@ -2713,7 +3959,7 @@ function loadSample3() {
   const b = `    from: { row: 1, column: 1 },\n    to: { row: 1, column: 6 }\n  };\n  \n  // 色定義（削除・挿入ともに赤）\n  const colors = {\n    delete: { font: 'FFFF0000', bg: 'FFFFD9D9' },\n    insert: { font: 'FFFF0000', bg: 'FFFFD9D9' },\n    newline: { font: 'FF996600', bg: 'FFFFF0D9' }\n  };\n  \n`;
   document.getElementById('textA').value = a;
   document.getElementById('textB').value = b;
-  compareHybrid();
+  compare();
 }
 
 
@@ -3029,12 +4275,22 @@ async function downloadExcel() {
   };
   
   // 比較結果を追加
+  let rowNum = 0;
   lastDiffRows.forEach((row, index) => {
+    // BLANK行（内部マーカー）はスキップ
+    const aText = row.a.tokens.map(t => t.value || '').join('');
+    const bText = row.b.tokens.map(t => t.value || '').join('');
+    if (/^[\uE000\u0000]?BLANK:[AB]:\d+$/.test(aText) || /^[\uE000\u0000]?BLANK:[AB]:\d+$/.test(bText)) {
+      return; // この行をスキップ
+    }
+    
+    rowNum++;
+    
     // 差分があるかチェック
     const hasDiff = _tTokenArray(row.a.tokens).some(t => t.type === 'delete' || t.type.startsWith('newline')) ||
                     _tTokenArray(row.b.tokens).some(t => t.type === 'insert' || t.type.startsWith('newline'));
     
-    const excelRow = ws.addRow([index + 1, '', '', !hasDiff, '', '']);    
+    const excelRow = ws.addRow([rowNum, '', '', !hasDiff, '', '']);    
     // 改行差分行（↵だけの行）は、UIのグレーアウトをExcelにも反映
     // ※ 行全体ではなく、UIで empty-cell になっている「空側」だけをグレーアウトする
     const aLen = row.a.tokens.length;
@@ -3771,6 +5027,130 @@ function test_chars_repair_does_not_split_it_will_by_newline_move() {
   _tAssert(!bad, "Chars diff should not split 'It will' across rows due to moved blank line");
 }
 
+function test_chars_repair_does_not_split_that_will() {
+  const A = [
+    "If I put it in my batter,",
+    "It will make my batter bitter.",
+    "But a bit of better butter",
+    "Will make my batter better."
+  ].join("\n");
+
+  const B = [
+    "If I put it in my batter,",
+    "",
+    "That will make my batter bitter.",
+    "But a bit of better butter",
+    "That will make my batter better."
+  ].join("\n");
+
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  let rows = renderDiff(diff);
+  rows = repairMidlineNewlineRows(rows);
+
+  const combinedB = rows.map(r => r.b.tokens.map(t => t.value).join(''));
+  let split = false;
+  for (let i = 0; i + 1 < combinedB.length; i++) {
+    if (combinedB[i].includes("That will") && combinedB[i + 1].startsWith(" make my batter better")) {
+      split = true;
+      break;
+    }
+  }
+  _tAssert(!split, "Chars diff should not split 'That will make my batter better.' across rows");
+}
+
+function test_chars_repair_merges_trailing_punctuation() {
+  const A = [
+    "But a bit of better butter,",
+    "That will make my batter better."
+  ].join("\n");
+
+  const B = [
+    "But a bit of better butter",
+    "",
+    "Will make my batter better."
+  ].join("\n");
+
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  let rows = renderDiff(diff);
+  rows = repairMidlineNewlineRows(rows);
+
+  let hasPunctRow = false;
+  for (const r of rows) {
+    const aText = r.a.tokens.map(t => t.value).join('');
+    if (aText.trim() === ',' || aText.trim() === ',') {
+      hasPunctRow = true;
+      break;
+    }
+  }
+  _tAssert(!hasPunctRow, "Chars diff should not isolate trailing punctuation on its own row");
+}
+
+function test_chars_repair_merges_punctuation_after_equal_row() {
+  const A = [
+    "But a bit of better butter,",
+    "",
+    "That will make my batter better."
+  ].join("\n");
+
+  const B = [
+    "But a bit of better butter",
+    "Will make my batter better."
+  ].join("\n");
+
+  const diff = generateDiff(tokenize(A), tokenize(B));
+  let rows = renderDiff(diff);
+  rows = repairMidlineNewlineRows(rows);
+
+  const aLines = rows.map(r => r.a.tokens.map(t => t.value).join(''));
+  const hasCommaRow = aLines.some(line => line.trim() === ',');
+  _tAssert(!hasCommaRow, "Chars diff should not split ',' into its own row after equal-line merge");
+}
+
+function test_chars_respects_original_lines_in_sample2() {
+  const A = [
+    "AAAAAAAAAAAAAAA     B9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     A9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     B9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     C9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     D9*************** AAAAAAA32"
+  ].join("\n");
+
+  const B = [
+    "AAAAAAAAAAAAAAA     B9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     B9*************** AAAAAAA32",
+    "AAAAAAAAAAAAAAA     C9*************** AAAAAAA32",
+    "CAAAAAAAAAAAAAA     D9*************** AAAAAAA32"
+  ].join("\n");
+
+  const rows = buildRowsByLines(A, B);
+
+  const aLines = splitLinesKeepEmpty(A);
+  const bLines = splitLinesKeepEmpty(B);
+
+  function assertLinesReconstructed(rowsSide, lines, label) {
+    const seen = [];
+    for (const row of rowsSide) {
+      // 空のtokens（片側だけの行で、この側には内容がない）はスキップ
+      if (row.tokens.length === 0) continue;
+      
+      const text = row.tokens.map(t => t.value).join('');
+      seen.push(text);
+    }
+
+    let idx = 0;
+    for (const line of lines) {
+      _tAssert(idx < seen.length, `${label}: missing line "${line}"`);
+      _tEq(seen[idx], line, `${label}: line mismatch at ${idx + 1}`);
+      idx++;
+    }
+  }
+
+  const rowsA = rows.map(r => r.a);
+  const rowsB = rows.map(r => r.b);
+  assertLinesReconstructed(rowsA, aLines, 'A-side');
+  assertLinesReconstructed(rowsB, bLines, 'B-side');
+}
+
 
 function test_line_replace_block_alignment() {
   const t0 = _tLogStart("test_line_replace_block_alignment");
@@ -3939,7 +5319,11 @@ function runAllTests() {
     test_hybrid_does_not_split_single_line,
     test_hybrid_returns_rows_and_scores,
     test_scoreRows_penalizes_newline_only_more_than_empty_side,
-    test_chars_repair_does_not_split_it_will_by_newline_move
+    test_chars_repair_does_not_split_it_will_by_newline_move,
+    test_chars_repair_does_not_split_that_will,
+    test_chars_repair_merges_trailing_punctuation,
+    test_chars_repair_merges_punctuation_after_equal_row,
+    test_chars_respects_original_lines_in_sample2
   ];
 
   const started = performance.now();
